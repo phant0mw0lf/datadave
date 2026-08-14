@@ -1,0 +1,28 @@
+---
+// The site's mark: three dots along the archive-axis line — raw, structured,
+// and (with a pulse ring) the active AI signal. Matches public/favicon.svg;
+// unlike that standalone file, this one can use the page's own --tag-*
+// tokens so it stays in lockstep with the site's light/dark toggle instead
+// of only the OS-level favicon media query.
+interface Props {
+	class?: string;
+}
+
+const { class: className } = Astro.props;
+---
+
+<svg viewBox="0 0 100 100" class={className} aria-hidden="true" focusable="false">
+	<line x1="10" y1="55" x2="90" y2="55" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
+	<circle cx="24" cy="55" r="7" fill="var(--tag-2)" />
+	<circle cx="55" cy="55" r="11" fill="var(--tag-0)" />
+	<circle
+		cx="84"
+		cy="55"
+		r="23"
+		fill="none"
+		stroke="var(--tag-1)"
+		stroke-width="3.5"
+		stroke-opacity="0.45"
+	/>
+	<circle cx="84" cy="55" r="15" fill="var(--tag-1)" />
+</svg>

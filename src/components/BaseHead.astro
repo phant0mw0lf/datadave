@@ -1,0 +1,74 @@
+---
+import { SITE } from '../consts';
+
+interface Props {
+	title?: string;
+	description?: string;
+	image?: string;
+}
+
+const { title, description = SITE.description, image = '/og-default.png' } = Astro.props;
+
+const pageTitle = title ? `${title} · ${SITE.title}` : `${SITE.title} — ${SITE.tagline}`;
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const ogImageURL = new URL(image, Astro.site);
+---
+
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+<!-- Self-hosted (src/styles/fonts.css) — preload only the latin-subset body
+     text and mono files, since those render immediately on every page.
+     Fraunces (headings only) and the other unicode-range subsets load
+     on demand via font-display: swap. -->
+<link
+	rel="preload"
+	href="/fonts/ibm-plex-sans-3.woff2"
+	as="font"
+	type="font/woff2"
+	crossorigin
+/>
+<link
+	rel="preload"
+	href="/fonts/ibm-plex-mono-400-3.woff2"
+	as="font"
+	type="font/woff2"
+	crossorigin
+/>
+<link rel="sitemap" href="/sitemap-index.xml" />
+<link
+	rel="alternate"
+	type="application/rss+xml"
+	title={SITE.title}
+	href={new URL('rss.xml', Astro.site)}
+/>
+<link rel="canonical" href={canonicalURL} />
+<meta name="generator" content={Astro.generator} />
+
+<title>{pageTitle}</title>
+<meta name="description" content={description} />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:url" content={canonicalURL} />
+<meta property="og:title" content={pageTitle} />
+<meta property="og:description" content={description} />
+<meta property="og:image" content={ogImageURL} />
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={pageTitle} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={ogImageURL} />
+
+<script is:inline>
+	// Runs before first paint so the correct theme is set before anything
+	// renders — doing this after paint (e.g. in a component's client
+	// script) causes a light-to-dark flash on every load.
+	const stored = localStorage.getItem('theme');
+	const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+	if (stored === 'dark' || (!stored && prefersDark)) {
+		document.documentElement.classList.add('dark');
+	}
+</script>

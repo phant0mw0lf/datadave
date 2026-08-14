@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+	<style>
+		.ink { stroke: #1F2328; }
+		.d0 { fill: #1A7F37; }
+		.d1 { fill: #8250DF; }
+		.d2 { fill: #0969DA; }
+		.ring { stroke: #0969DA; }
+		@media (prefers-color-scheme: dark) {
+			.ink { stroke: #E6EDF3; }
+			.d0 { fill: #3FB950; }
+			.d1 { fill: #A371F7; }
+			.d2 { fill: #2F81F7; }
+			.ring { stroke: #2F81F7; }
+		}
+	</style>
+	<line x1="10" y1="55" x2="90" y2="55" class="ink" stroke-width="6" stroke-linecap="round" />
+	<circle cx="24" cy="55" r="7" class="d0" />
+	<circle cx="55" cy="55" r="11" class="d1" />
+	<circle cx="84" cy="55" r="23" class="ring" fill="none" stroke-width="3.5" stroke-opacity="0.45" />
+	<circle cx="84" cy="55" r="15" class="d2" />
+</svg>

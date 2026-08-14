@@ -1,0 +1,47 @@
+---
+title: "Hello, World"
+description: "The first post on this blog, and a quick tour of the frontmatter fields every post uses."
+pubDate: 2026-08-14
+tags: ["meta"]
+draft: true
+---
+
+This is the reference post. Copy this file's frontmatter when you start a
+new one — or just run:
+
+```bash
+make post TITLE="My New Post"
+```
+
+## Frontmatter fields
+
+Every post needs:
+
+- `title` — shown as the page `<h1>` and in `<title>`.
+- `description` — used as the meta description and the teaser on `/blog`.
+- `pubDate` — an ISO date (`YYYY-MM-DD`); controls sort order.
+- `tags` — an array of strings; each one gets its own `/tags/<tag>/` page automatically.
+- `draft` — `true` hides the post from production builds and RSS, but it's
+  still visible in `astro dev`. New posts default to `draft: true` so
+  nothing goes live by accident.
+
+`updatedDate` and `heroImage` are optional and can be added later.
+
+## Code blocks
+
+Shiki renders code with separate light/dark themes, so blocks stay legible
+in both modes without extra work:
+
+```python
+def greet(name: str) -> str:
+    return f"Hello, {name}!"
+```
+
+## Footnotes
+
+MDX supports standard Markdown footnotes.[^1]
+
+[^1]: Like this one.
+
+This post ships with `draft: true` — remove that line once you're ready to
+publish your first real entry, or leave it and add a second post instead.

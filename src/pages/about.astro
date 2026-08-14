@@ -1,0 +1,27 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { SITE } from '../consts';
+---
+
+<BaseLayout title="About" description={`About ${SITE.author}.`}>
+	<h1 class="font-display text-2xl font-semibold tracking-tight text-fg sm:text-3xl">About</h1>
+	<div class="prose dark:prose-invert mt-6 max-w-none">
+		<p>
+			Hi, I'm David — an Azure Cloud Architect at glueckkanja AG, based in
+			Bavaria, Germany. Over the last several years I've focused on the
+			unglamorous but essential part of the stack: building the data
+			foundation — pulling scattered sources into a single lakehouse,
+			structuring it, cleaning it up, and making it something teams can
+			actually build on.
+		</p>
+		<p>
+			These days that foundation is what makes real AI work — LLMs, agents,
+			and automation that hold up outside a demo instead of hallucinating on
+			messy inputs. This blog is where I write about that intersection:
+			practical, customer-facing lessons from real Azure data &amp; AI
+			engagements, not theory. (Colleagues call me Data Dave — now you know
+			where the name comes from.) Opinions here are my own, not my
+			employer's.
+		</p>
+	</div>
+</BaseLayout>

@@ -1,0 +1,136 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { Image } from 'astro:assets';
+import BaseLayout from './BaseLayout.astro';
+import FormattedDate from '../components/FormattedDate.astro';
+import { SITE } from '../consts';
+import { readingTime } from '../lib/posts';
+import { tagColorVar } from '../lib/tagColor';
+
+interface Props {
+	post: CollectionEntry<'blog'>;
+}
+
+const { post } = Astro.props;
+const { title, description, pubDate, updatedDate, tags, heroImage } = post.data;
+const minutes = readingTime(post.body ?? '');
+
+const jsonLd = {
+	'@context': 'https://schema.org',
+	'@type': 'BlogPosting',
+	headline: title,
+	description,
+	datePublished: pubDate.toISOString(),
+	...(updatedDate && { dateModified: updatedDate.toISOString() }),
+	author: { '@type': 'Person', name: SITE.author },
+};
+---
+
+<BaseLayout title={title} description={description}>
+	<script type="application/ld+json" set:html={JSON.stringify(jsonLd)} is:inline />
+	<article class="max-w-none">
+		<a href="/blog" class="font-mono text-xs text-fg-muted transition-colors hover:text-fg">
+			&larr; Blog
+		</a>
+		<header class="mt-3 mb-8">
+			<h1
+				class="text-balance font-display text-3xl leading-tight font-semibold tracking-tight text-fg sm:text-4xl"
+			>
+				{title}
+			</h1>
+			<div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-fg-muted">
+				<FormattedDate date={pubDate} />
+				<span aria-hidden="true">&middot;</span>
+				<span>{minutes}</span>
+				{
+					updatedDate && (
+						<>
+							<span aria-hidden="true">&middot;</span>
+							<span>
+								Updated <FormattedDate date={updatedDate} />
+							</span>
+						</>
+					)
+				}
+				{
+					tags.map((tag) => (
+						<a
+							href={`/tags/${tag}/`}
+							class="rounded-full px-2 py-0.5 font-medium text-white transition-opacity hover:opacity-80"
+							style={`background-color: ${tagColorVar(tag)}`}
+						>
+							{tag}
+						</a>
+					))
+				}
+			</div>
+		</header>
+		{
+			heroImage && (
+				<Image
+					src={heroImage}
+					alt=""
+					class="mb-8 aspect-video w-full rounded-lg border border-border object-cover"
+					widths={[400, 800, 1200]}
+					sizes="(min-width: 640px) 42rem, 100vw"
+				/>
+			)
+		}
+		<div class="prose dark:prose-invert max-w-none">
+			<slot />
+		</div>
+	</article>
+</BaseLayout>
+
+<script>
+	// Wraps each Shiki-rendered code block with a toolbar showing the fenced
+	// language (Shiki already puts it on `data-language`) and a copy button.
+	// Runs once on load — this project has no view transitions, so there's no
+	// need to re-run on navigation.
+	function enhanceCodeBlocks() {
+		document.querySelectorAll<HTMLPreElement>('pre.astro-code').forEach((pre) => {
+			if (pre.parentElement?.classList.contains('code-block')) return;
+
+			const wrapper = document.createElement('div');
+			wrapper.className = 'code-block';
+			pre.replaceWith(wrapper);
+			wrapper.appendChild(pre);
+
+			const toolbar = document.createElement('div');
+			toolbar.className = 'code-block-toolbar';
+
+			const lang = pre.dataset.language;
+			if (lang) {
+				const langLabel = document.createElement('span');
+				langLabel.className = 'code-block-lang';
+				langLabel.textContent = lang;
+				toolbar.appendChild(langLabel);
+			} else {
+				toolbar.appendChild(document.createElement('span'));
+			}
+
+			const button = document.createElement('button');
+			button.type = 'button';
+			button.className = 'code-block-copy';
+			button.textContent = 'Copy';
+			button.addEventListener('click', async () => {
+				try {
+					await navigator.clipboard.writeText(pre.textContent ?? '');
+					button.textContent = 'Copied';
+					button.classList.add('copied');
+				} catch {
+					button.textContent = 'Failed to copy';
+				}
+				setTimeout(() => {
+					button.textContent = 'Copy';
+					button.classList.remove('copied');
+				}, 1500);
+			});
+			toolbar.appendChild(button);
+
+			wrapper.insertBefore(toolbar, pre);
+		});
+	}
+
+	enhanceCodeBlocks();
+</script>

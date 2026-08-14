@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in */src/content/blog/*.md|*/src/content/blog/*.mdx) npx astro check 2>&1 | tail -40 ;; esac; }",
+            "timeout": 60,
+            "statusMessage": "Validating content schema (astro check)..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; case \"$f\" in */src/consts.ts|*/README.md|*/node_modules/*|*/dist/*) exit 0 ;; esac; [ -f \"$f\" ] || exit 0; if grep -qE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}|github\\.com/[A-Za-z0-9_.-]+|linkedin\\.com/in/[A-Za-z0-9_-]+' \"$f\"; then echo \"{\\\"systemMessage\\\":\\\"Heads up: $f may contain a hardcoded email/GitHub/LinkedIn value. Per CLAUDE.md, site/author metadata should come from src/consts.ts (SITE), not be hardcoded.\\\"}\" ; fi; } 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

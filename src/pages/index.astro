@@ -1,0 +1,40 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PostCard from '../components/PostCard.astro';
+import ArchiveAxis from '../components/ArchiveAxis.astro';
+import { SITE } from '../consts';
+import { getPosts } from '../lib/posts';
+
+const allPosts = await getPosts();
+const posts = allPosts.slice(0, 5);
+---
+
+<BaseLayout>
+	<h1 class="text-balance font-display text-2xl font-semibold tracking-tight text-fg sm:text-3xl">
+		{SITE.tagline}
+	</h1>
+	<p class="mt-2 max-w-md text-fg-muted">{SITE.description}</p>
+
+	<div class="mt-10">
+		<ArchiveAxis posts={allPosts} />
+
+		{posts.map((post) => <PostCard post={post} />)}
+
+		{
+			posts.length === 0 && (
+				<p class="text-fg-muted">No posts yet — check back soon.</p>
+			)
+		}
+
+		{
+			posts.length > 0 && (
+				<a
+					href="/blog"
+					class="mt-6 inline-block text-sm text-accent transition-colors hover:underline"
+				>
+					All posts &rarr;
+				</a>
+			)
+		}
+	</div>
+</BaseLayout>

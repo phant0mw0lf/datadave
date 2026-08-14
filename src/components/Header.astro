@@ -1,0 +1,37 @@
+---
+import { SITE } from '../consts';
+import ThemeToggle from './ThemeToggle.astro';
+import Logo from './Logo.astro';
+
+const navItems = [
+	{ href: '/blog', label: 'Blog' },
+	{ href: '/tags', label: 'Tags' },
+	{ href: '/about', label: 'About' },
+];
+---
+
+<header class="border-b border-border">
+	<div class="page-container flex items-center justify-between py-4">
+		<a
+			href="/"
+			class="flex items-center gap-2 font-mono text-sm font-medium tracking-tight text-fg"
+		>
+			<Logo class="h-5 w-5" />
+			{SITE.title}
+		</a>
+		<nav class="flex items-center gap-5">
+			{
+				navItems.map((item) => (
+					<a
+						href={item.href}
+						class="text-sm text-fg-muted transition-colors hover:text-fg aria-[current=page]:font-medium aria-[current=page]:text-fg"
+						aria-current={Astro.url.pathname.startsWith(item.href) ? 'page' : undefined}
+					>
+						{item.label}
+					</a>
+				))
+			}
+			<ThemeToggle />
+		</nav>
+	</div>
+</header>

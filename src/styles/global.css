@@ -1,0 +1,186 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+@import './fonts.css';
+
+/* Tailwind 4 is configured here, CSS-first — there is no tailwind.config.js. */
+
+/* Class-based dark mode: without this, Tailwind's `dark:` variant compiles to
+   `@media (prefers-color-scheme: dark)` and ignores the `.dark` class that
+   the no-flash script in BaseHead.astro sets — it would track the OS setting
+   instead of the toggle. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* These --color-* tokens must live inside @theme (not plain :root) or
+   Tailwind never generates the text-fg / border-border / bg-accent / etc.
+   utilities that reference them — the classes would compile to nothing.
+
+   Palette is GitHub's own light/dark UI tokens (github.com "Primer" —
+   canvas/fg/border/accent/success/done), which keeps the chrome and the
+   Shiki github-light/github-dark code blocks (astro.config.mjs) drawing
+   from one system instead of two. */
+@theme {
+	--font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+	--font-display: 'Fraunces', ui-serif, Georgia, serif;
+
+	--color-bg: theme(--color-white);
+	--color-surface: #f6f8fa;
+	--color-fg: #1f2328;
+	--color-fg-muted: #656d76;
+	--color-border: #d0d7de;
+	--color-accent: #0969da;
+}
+
+/* Categorical tag palette — index picked deterministically per tag name by
+   src/lib/tagColor.ts, so the same tag is always the same color everywhere
+   (list, post header, archive axis). Only ever consumed via var(--tag-N) in
+   inline styles, never as a generated utility class, so these stay OUTSIDE
+   @theme: Tailwind's theme parser doesn't recognize "tag" as a namespace and
+   silently drops every entry past the first when they're declared inside
+   @theme — plain custom properties avoid that entirely. */
+:root {
+	--tag-0: #8250df;
+	--tag-1: #0969da;
+	--tag-2: #1a7f37;
+	--tag-3: #bc4c00;
+	--tag-4: #cf222e;
+	--tag-5: #bf3989;
+}
+
+/* Overrides the CSS custom properties above when the .dark class is present;
+   the utilities generated from @theme keep pointing at var(--color-*), so
+   they pick this up automatically. */
+.dark {
+	--color-bg: #0d1117;
+	--color-surface: #161b22;
+	--color-fg: #e6edf3;
+	--color-fg-muted: #848d97;
+	--color-border: #30363d;
+	--color-accent: #2f81f7;
+
+	--tag-0: #a371f7;
+	--tag-1: #2f81f7;
+	--tag-2: #3fb950;
+	--tag-3: #fb8f44;
+	--tag-4: #f85149;
+	--tag-5: #db61a2;
+}
+
+body {
+	background-color: var(--color-bg);
+	color: var(--color-fg);
+}
+
+/* Shared page measure — was duplicated as `mx-auto max-w-2xl px-4` across
+   BaseLayout, Header, and Footer independently. One place now. */
+@utility page-container {
+	margin-inline: auto;
+	width: 100%;
+	max-width: 42rem;
+	padding-inline: 1rem;
+}
+@media (min-width: 640px) {
+	.page-container {
+		padding-inline: 1.5rem;
+	}
+}
+
+.prose {
+	--tw-prose-body: var(--color-fg);
+	--tw-prose-headings: var(--color-fg);
+	--tw-prose-links: var(--color-accent);
+	--tw-prose-bold: var(--color-fg);
+	--tw-prose-code: var(--color-fg);
+	--tw-prose-quotes: var(--color-fg-muted);
+	--tw-prose-hr: var(--color-border);
+	--tw-prose-th-borders: var(--color-border);
+	--tw-prose-td-borders: var(--color-border);
+	--tw-prose-bullets: var(--color-fg-muted);
+	--tw-prose-counters: var(--color-fg-muted);
+	--tw-prose-captions: var(--color-fg-muted);
+	--tw-prose-quote-borders: var(--color-border);
+}
+
+.prose pre {
+	border: 1px solid var(--color-border);
+}
+
+/* Code block toolbar — language label + copy button, injected by the script
+   in PostLayout.astro around each Shiki `pre.astro-code`. Kept as a sibling
+   above the pre (not an absolutely-positioned overlay) so it doesn't fight
+   the typography plugin's own pre padding. */
+.code-block {
+	margin: 0 0 1.25em;
+}
+.code-block pre.astro-code {
+	margin: 0;
+	border-top: none;
+	border-radius: 0 0 0.5rem 0.5rem;
+}
+.code-block-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	padding: 0.4rem 0.75rem;
+	border: 1px solid var(--color-border);
+	border-bottom: none;
+	border-radius: 0.5rem 0.5rem 0 0;
+	background-color: var(--color-surface);
+}
+.code-block-lang {
+	font-family: var(--font-mono);
+	font-size: 0.68rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--color-fg-muted);
+}
+.code-block-copy {
+	font-family: var(--font-mono);
+	font-size: 0.68rem;
+	color: var(--color-fg-muted);
+	background: transparent;
+	border: 1px solid var(--color-border);
+	border-radius: 0.35rem;
+	padding: 0.15rem 0.55rem;
+	cursor: pointer;
+	transition:
+		color 0.15s ease,
+		border-color 0.15s ease;
+}
+.code-block-copy:hover {
+	color: var(--color-fg);
+	border-color: var(--color-fg-muted);
+}
+.code-block-copy.copied {
+	color: var(--color-accent);
+	border-color: var(--color-accent);
+}
+
+/* Fraunces is reserved for the post/page h1 only (PostLayout.astro,
+   index.astro) — prose section headings stay IBM Plex Sans so the display
+   face doesn't show up mid-article. Plain class selectors beat the
+   typography plugin's :where()-wrapped defaults without needing !important. */
+.prose h2,
+.prose h3 {
+	font-family: var(--font-sans);
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+
+/* Shiki dual-theme: astro.config.mjs sets light/dark shiki themes. Shiki
+   inlines the light theme's colors directly as `style="..."` on .astro-code
+   (and each token span) plus exposes the dark equivalents as --shiki-dark /
+   --shiki-dark-bg custom properties — it does NOT switch itself. Only an
+   `!important` rule in our own stylesheet can beat that inline style, which
+   is why this needs !important rather than the border/color overrides used
+   elsewhere. This is Shiki's own documented dual-theme pattern, keyed to our
+   .dark class instead of prefers-color-scheme so it tracks the toggle. */
+.dark .astro-code,
+.dark .astro-code span {
+	color: var(--shiki-dark) !important;
+	background-color: var(--shiki-dark-bg) !important;
+	font-style: var(--shiki-dark-font-style) !important;
+	font-weight: var(--shiki-dark-font-weight) !important;
+	text-decoration: var(--shiki-dark-text-decoration) !important;
+}

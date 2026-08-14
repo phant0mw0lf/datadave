@@ -1,0 +1,91 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import { tagColorVar } from '../lib/tagColor';
+
+interface Props {
+	posts: CollectionEntry<'blog'>[];
+}
+
+const { posts } = Astro.props;
+
+const chronological = [...posts].sort(
+	(a, b) => a.data.pubDate.valueOf() - b.data.pubDate.valueOf(),
+);
+
+const minMs = chronological[0]?.data.pubDate.valueOf() ?? 0;
+const maxMs = chronological[chronological.length - 1]?.data.pubDate.valueOf() ?? 0;
+const spanMs = maxMs - minMs;
+
+function positionFor(ms: number): number {
+	if (spanMs === 0) return 50;
+	return 4 + ((ms - minMs) / spanMs) * 92;
+}
+
+const spansMultipleYears =
+	chronological.length > 0 && new Date(minMs).getFullYear() !== new Date(maxMs).getFullYear();
+
+function formatTick(date: Date): string {
+	const month = date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+	return spansMultipleYears ? `${month} ${date.getFullYear().toString().slice(2)}` : month;
+}
+
+const ticks =
+	chronological.length === 0
+		? []
+		: spanMs === 0
+			? [{ label: formatTick(new Date(minMs)), position: 50 }]
+			: [
+					{ label: formatTick(new Date(minMs)), position: 4 },
+					{ label: formatTick(new Date((minMs + maxMs) / 2)), position: 50 },
+					{ label: formatTick(new Date(maxMs)), position: 96 },
+				];
+
+const dots = chronological.map((post) => ({
+	position: positionFor(post.data.pubDate.valueOf()),
+	color: post.data.tags[0] ? tagColorVar(post.data.tags[0]) : 'var(--color-fg-muted)',
+	title: post.data.title,
+}));
+
+const rangeSummary =
+	spanMs > 0
+		? `between ${new Date(minMs).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} and ${new Date(
+				maxMs,
+			).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}`
+		: '';
+---
+
+{
+	posts.length > 0 && (
+		<div class="mb-10">
+			<div class="mb-2 font-mono text-[0.65rem] tracking-wider text-fg-muted uppercase">
+				Archive &middot; by month
+			</div>
+			<div class="relative h-8 border-t border-border" aria-hidden="true">
+				{ticks.map((tick) => (
+					<>
+						<span
+							class="bg-border absolute -top-px h-1.5 w-px"
+							style={`left: ${tick.position}%`}
+						/>
+						<span
+							class="absolute top-2.5 -translate-x-1/2 font-mono text-[0.62rem] text-fg-muted"
+							style={`left: ${tick.position}%`}
+						>
+							{tick.label}
+						</span>
+					</>
+				))}
+				{dots.map((dot) => (
+					<span
+						class="border-bg absolute -top-1 h-2 w-2 -translate-x-1/2 rounded-full border-2"
+						style={`left: ${dot.position}%; background-color: ${dot.color}`}
+						title={dot.title}
+					/>
+				))}
+			</div>
+			<p class="sr-only">
+				{posts.length} post{posts.length === 1 ? '' : 's'} published {rangeSummary}
+			</p>
+		</div>
+	)
+}
