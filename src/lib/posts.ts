@@ -29,9 +29,15 @@ export async function getPostsByTag(tag: string): Promise<CollectionEntry<'blog'
 	return posts.filter((post) => post.data.tags.includes(tag));
 }
 
-/** Rough reading time estimate, English prose average of 200 wpm. */
+/**
+ * Rough reading time estimate, English prose average of 200 wpm. Strips
+ * fenced code blocks first — MDX `body` includes them raw, and a code-heavy
+ * post (the norm for this blog) would otherwise count code as prose and
+ * skew the estimate high.
+ */
 export function readingTime(body: string): string {
-	const words = body.trim().split(/\s+/).length;
+	const prose = body.replace(/```[\s\S]*?```/g, '');
+	const words = prose.trim().split(/\s+/).filter(Boolean).length;
 	const minutes = Math.max(1, Math.round(words / 200));
 	return `${minutes} min read`;
 }

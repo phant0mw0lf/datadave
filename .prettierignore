@@ -1,0 +1,12 @@
+# Generated — see the header comment in the file itself for regeneration.
+src/styles/fonts.css
+
+# Lockfile — npm-managed only, never hand-formatted.
+package-lock.json
+
+# Markdown/MDX — excluded after prettier's list-continuation handling
+# corrupted a numbered-list item in a skill file (dropped the item's
+# indentation and split an inline code span across the break). Hand-written
+# docs/content aren't what `make fmt` is meant to police anyway.
+*.md
+*.mdx

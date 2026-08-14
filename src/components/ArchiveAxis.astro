@@ -58,15 +58,12 @@ const rangeSummary =
 	posts.length > 0 && (
 		<div class="mb-10">
 			<div class="mb-2 font-mono text-[0.65rem] tracking-wider text-fg-muted uppercase">
-				Archive &middot; by month
+				Archive &middot; by date
 			</div>
 			<div class="relative h-8 border-t border-border" aria-hidden="true">
 				{ticks.map((tick) => (
 					<>
-						<span
-							class="bg-border absolute -top-px h-1.5 w-px"
-							style={`left: ${tick.position}%`}
-						/>
+						<span class="bg-border absolute -top-px h-1.5 w-px" style={`left: ${tick.position}%`} />
 						<span
 							class="absolute top-2.5 -translate-x-1/2 font-mono text-[0.62rem] text-fg-muted"
 							style={`left: ${tick.position}%`}
@@ -84,7 +81,8 @@ const rangeSummary =
 				))}
 			</div>
 			<p class="sr-only">
-				{posts.length} post{posts.length === 1 ? '' : 's'} published {rangeSummary}
+				{posts.length} post{posts.length === 1 ? '' : 's'} published
+				{rangeSummary ? ` ${rangeSummary}` : ''}
 			</p>
 		</div>
 	)

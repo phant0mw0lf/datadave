@@ -18,6 +18,14 @@ scripts still exist because Cloudflare's build environment calls
 - `make serve` — production build via the real Workers runtime (`wrangler dev`)
 - `make deploy` — manual deploy; normally Cloudflare deploys on push to `main`
 
+**`typescript` is pinned to `^6.0.3` on purpose — don't bump it to 7.x.**
+Tested it: TypeScript 7 is the new native/Go-based compiler rewrite and
+doesn't expose the programmatic API `@astrojs/language-server` needs yet, so
+`astro check` (and `make check`) hard-fails with it installed (`npm run
+build` alone still works, which makes this easy to miss in a partial test).
+Tracked upstream: https://github.com/withastro/roadmap/discussions/1321 —
+safe to revisit once that lands.
+
 ## Content model
 
 Schema lives in `src/content.config.ts` (Content Layer API — `glob` loader,
@@ -57,9 +65,46 @@ there is no `tailwind.config.js`, don't create one. Dark mode toggles a
 `BaseHead.astro` that must run before first paint, or toggling flashes the
 wrong theme on load.
 
+## Design system
+
+Palette is GitHub's own light/dark UI tokens (`--color-bg/fg/fg-muted/
+border/accent` in `global.css`), which is also why the Shiki code-block
+theme is `github-light`/`github-dark-default` in `astro.config.mjs` — one
+system instead of two.
+
+**The `--tag-0` through `--tag-5` categorical tag colors must stay in a
+plain `:root`/`.dark` block, never inside `@theme`.** Tailwind 4's theme
+parser doesn't recognize `tag` as a namespace and silently drops every
+entry past the first when they're declared inside `@theme` — this broke
+the palette once already this session (all six tags rendered as the same
+color, no error, no warning). These tokens are only ever consumed via
+`var(--tag-N)` in inline `style` attributes (see `src/lib/tagColor.ts`,
+`TagPill.astro`), never as a generated utility class, so they don't need to
+be inside `@theme` in the first place.
+
+`--tag-N` as a background is white-text-on-solid in light mode but a tint
+(`color-mix(in oklab, var(--tag-N) 15%, transparent)`) with `var(--tag-N)`
+as the text color in dark mode — see the `.tag-pill` rule in `global.css`.
+White-on-solid fails WCAG AA contrast for several of the six colors in dark
+mode; don't revert to it without rechecking contrast.
+
+Fonts are self-hosted (`public/fonts/`, generated `src/styles/fonts.css`) —
+IBM Plex Sans for body/UI, IBM Plex Mono for dates/tags/code, Fraunces for
+display. **Fraunces is reserved for the post/page `<h1>` only** (see
+`PostLayout.astro`, `index.astro`) — don't reach for it elsewhere,
+including prose section headings (`.prose h2`/`h3` in `global.css` are
+deliberately IBM Plex Sans, not Fraunces — an earlier italic-Fraunces
+version of those was tried and reverted, it read as too "designed"
+mid-article). The rest of the UI stays IBM Plex Sans on purpose, so the
+display face doesn't show up anywhere except that one signature moment.
+
 ## Development
 
-When starting the dev server, use background mode:
+Humans run `make dev`, which is `npm run dev` in the foreground — normal
+for an interactive terminal.
+
+**Agents should not use `make dev`** — it blocks, since `make` doesn't
+background the process for you. Use background mode directly instead:
 
 ```
 astro dev --background

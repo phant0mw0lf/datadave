@@ -2,6 +2,7 @@
 	id="theme-toggle"
 	type="button"
 	aria-label="Toggle dark mode"
+	aria-pressed="false"
 	class="rounded-md p-2 text-fg-muted transition-colors hover:bg-neutral-500/10 hover:text-fg"
 >
 	<svg
@@ -12,7 +13,9 @@
 		stroke-width="2"
 		class="dark:hidden h-5 w-5"
 	>
-		<path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36-.7-.7M6.34 6.34l-.7-.7m12.72 0-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />
+		<path
+			d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36-.7-.7M6.34 6.34l-.7-.7m12.72 0-.7.7M6.34 17.66l-.7.7M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"
+		></path>
 	</svg>
 	<svg
 		xmlns="http://www.w3.org/2000/svg"
@@ -22,14 +25,25 @@
 		stroke-width="2"
 		class="hidden dark:block h-5 w-5"
 	>
-		<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+		<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path>
 	</svg>
 </button>
 
 <script>
+	// aria-pressed can't be set correctly from BaseHead's pre-paint script —
+	// this button doesn't exist in the DOM yet when that runs (it's in
+	// <head>, before <body> is parsed). Set the real initial state here
+	// instead, as soon as this script runs.
 	const button = document.getElementById('theme-toggle');
+	if (button) {
+		button.setAttribute(
+			'aria-pressed',
+			String(document.documentElement.classList.contains('dark')),
+		);
+	}
 	button?.addEventListener('click', () => {
 		const isDark = document.documentElement.classList.toggle('dark');
 		localStorage.setItem('theme', isDark ? 'dark' : 'light');
+		button.setAttribute('aria-pressed', String(isDark));
 	});
 </script>

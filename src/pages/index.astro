@@ -20,11 +20,7 @@ const posts = allPosts.slice(0, 5);
 
 		{posts.map((post) => <PostCard post={post} />)}
 
-		{
-			posts.length === 0 && (
-				<p class="text-fg-muted">No posts yet — check back soon.</p>
-			)
-		}
+		{posts.length === 0 && <p class="text-fg-muted">No posts yet — check back soon.</p>}
 
 		{
 			posts.length > 0 && (

@@ -29,6 +29,11 @@
 	--color-fg-muted: #656d76;
 	--color-border: #d0d7de;
 	--color-accent: #0969da;
+
+	/* One step below Tailwind's built-in --text-xs, for tag pills and axis
+	   ticks — replaces three near-duplicate hardcoded arbitrary values
+	   (0.62rem/0.65rem/0.68rem) that had drifted apart with no token. */
+	--text-2xs: 0.65rem;
 }
 
 /* Categorical tag palette — index picked deterministically per tag name by
@@ -69,6 +74,16 @@
 body {
 	background-color: var(--color-bg);
 	color: var(--color-fg);
+}
+
+/* Only the skip link had a visible focus state before this — nav links,
+   PostCard/tag links, footer icons, and the code-block copy button all fell
+   back to the browser default (or nothing, in some Chromium cases). One
+   rule, applies everywhere. */
+:focus-visible {
+	outline: 2px solid var(--color-accent);
+	outline-offset: 2px;
+	border-radius: 0.25rem;
 }
 
 /* Shared page measure — was duplicated as `mx-auto max-w-2xl px-4` across
@@ -155,6 +170,23 @@ body {
 .code-block-copy.copied {
 	color: var(--color-accent);
 	border-color: var(--color-accent);
+}
+
+/* Tag pill — colored chip used by TagPill.astro (post list, post header, tag
+   archive page). Caller sets --tag-color via inline style (the per-tag hash
+   from src/lib/tagColor.ts); this class decides how that color is applied.
+
+   White-on-solid is legible in light mode (5.03–5.36:1 contrast across all
+   six tag colors) but fails WCAG AA in dark mode — as low as 2.30:1 for the
+   orange slot, none of the six reach 4.5:1. Dark mode instead uses the tag
+   color as text on a tinted version of itself, which hits 5.05–8.21:1. */
+.tag-pill {
+	background-color: var(--tag-color);
+	color: white;
+}
+.dark .tag-pill {
+	background-color: color-mix(in oklab, var(--tag-color) 15%, transparent);
+	color: var(--tag-color);
 }
 
 /* Fraunces is reserved for the post/page h1 only (PostLayout.astro,

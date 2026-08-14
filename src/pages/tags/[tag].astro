@@ -1,8 +1,8 @@
 ---
 import BaseLayout from '../../layouts/BaseLayout.astro';
 import PostCard from '../../components/PostCard.astro';
+import TagPill from '../../components/TagPill.astro';
 import { getPostsByTag, getTags } from '../../lib/posts';
-import { tagColorVar } from '../../lib/tagColor';
 
 export async function getStaticPaths() {
 	const tags = await getTags();
@@ -17,12 +17,7 @@ const posts = await getPostsByTag(tag!);
 
 <BaseLayout title={`Tag: ${tag}`} description={`Posts tagged "${tag}".`}>
 	<div class="flex items-center gap-3">
-		<span
-			class="rounded-full px-3 py-1 font-mono text-sm font-medium text-white"
-			style={`background-color: ${tagColorVar(tag!)}`}
-		>
-			{tag}
-		</span>
+		<TagPill tag={tag!} size="md" />
 		<span class="font-mono text-sm text-fg-muted">
 			{posts.length} post{posts.length === 1 ? '' : 's'}
 		</span>

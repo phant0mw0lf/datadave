@@ -3,16 +3,16 @@ import type { CollectionEntry } from 'astro:content';
 import { Image } from 'astro:assets';
 import BaseLayout from './BaseLayout.astro';
 import FormattedDate from '../components/FormattedDate.astro';
+import TagPill from '../components/TagPill.astro';
 import { SITE } from '../consts';
 import { readingTime } from '../lib/posts';
-import { tagColorVar } from '../lib/tagColor';
 
 interface Props {
 	post: CollectionEntry<'blog'>;
 }
 
 const { post } = Astro.props;
-const { title, description, pubDate, updatedDate, tags, heroImage } = post.data;
+const { title, description, pubDate, updatedDate, tags, heroImage, lang } = post.data;
 const minutes = readingTime(post.body ?? '');
 
 const jsonLd = {
@@ -26,7 +26,14 @@ const jsonLd = {
 };
 ---
 
-<BaseLayout title={title} description={description}>
+<BaseLayout
+	title={title}
+	description={description}
+	image={heroImage?.src}
+	type="article"
+	publishedTime={pubDate.toISOString()}
+	lang={lang}
+>
 	<script type="application/ld+json" set:html={JSON.stringify(jsonLd)} is:inline />
 	<article class="max-w-none">
 		<a href="/blog" class="font-mono text-xs text-fg-muted transition-colors hover:text-fg">
@@ -39,7 +46,7 @@ const jsonLd = {
 				{title}
 			</h1>
 			<div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-fg-muted">
-				<FormattedDate date={pubDate} />
+				<FormattedDate date={pubDate} lang={lang} />
 				<span aria-hidden="true">&middot;</span>
 				<span>{minutes}</span>
 				{
@@ -47,24 +54,17 @@ const jsonLd = {
 						<>
 							<span aria-hidden="true">&middot;</span>
 							<span>
-								Updated <FormattedDate date={updatedDate} />
+								Updated <FormattedDate date={updatedDate} lang={lang} />
 							</span>
 						</>
 					)
 				}
-				{
-					tags.map((tag) => (
-						<a
-							href={`/tags/${tag}/`}
-							class="rounded-full px-2 py-0.5 font-medium text-white transition-opacity hover:opacity-80"
-							style={`background-color: ${tagColorVar(tag)}`}
-						>
-							{tag}
-						</a>
-					))
-				}
+				{tags.map((tag) => <TagPill tag={tag} />)}
 			</div>
 		</header>
+		<!-- alt="" below is intentional: hero images are decorative by policy
+		     on this blog (the title/dek already carries the meaning) — there's
+		     no per-post alt-text field in the content schema on purpose. -->
 		{
 			heroImage && (
 				<Image
@@ -113,20 +113,38 @@ const jsonLd = {
 			button.type = 'button';
 			button.className = 'code-block-copy';
 			button.textContent = 'Copy';
+			button.setAttribute('aria-label', lang ? `Copy ${lang} code` : 'Copy code');
+			toolbar.appendChild(button);
+
+			// Visually-hidden live region for the Copied/Failed result — the
+			// button's own text already shows it sighted, but with several
+			// blocks on one post every button's accessible name would
+			// otherwise just be "Copy", so a screen reader has no way to
+			// hear which one just changed state.
+			const status = document.createElement('span');
+			status.className = 'sr-only';
+			status.setAttribute('role', 'status');
+			status.setAttribute('aria-live', 'polite');
+			toolbar.appendChild(status);
+
+			let resetTimer: ReturnType<typeof setTimeout> | undefined;
 			button.addEventListener('click', async () => {
+				clearTimeout(resetTimer);
 				try {
 					await navigator.clipboard.writeText(pre.textContent ?? '');
 					button.textContent = 'Copied';
 					button.classList.add('copied');
+					status.textContent = 'Copied to clipboard';
 				} catch {
 					button.textContent = 'Failed to copy';
+					status.textContent = 'Failed to copy';
 				}
-				setTimeout(() => {
+				resetTimer = setTimeout(() => {
 					button.textContent = 'Copy';
 					button.classList.remove('copied');
+					status.textContent = '';
 				}, 1500);
 			});
-			toolbar.appendChild(button);
 
 			wrapper.insertBefore(toolbar, pre);
 		});

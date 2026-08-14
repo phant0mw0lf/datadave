@@ -9,15 +9,26 @@ interface Props {
 	title?: string;
 	description?: string;
 	image?: string;
+	type?: 'website' | 'article';
+	publishedTime?: string;
+	/** Defaults to 'en' — only post pages have a real value to pass, via
+	 * `post.data.lang` (see PostLayout.astro). */
+	lang?: 'en' | 'de';
 }
 
-const { title, description, image } = Astro.props;
+const { title, description, image, type, publishedTime, lang = 'en' } = Astro.props;
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={lang}>
 	<head>
-		<BaseHead title={title} description={description} image={image} />
+		<BaseHead
+			title={title}
+			description={description}
+			image={image}
+			type={type}
+			publishedTime={publishedTime}
+		/>
 	</head>
 	<body class="flex min-h-screen flex-col font-sans">
 		<a

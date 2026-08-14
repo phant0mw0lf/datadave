@@ -5,9 +5,19 @@ interface Props {
 	title?: string;
 	description?: string;
 	image?: string;
+	/** 'article' for posts — adds og:type=article + article:published_time. */
+	type?: 'website' | 'article';
+	/** ISO date string; only used (and required) when type="article". */
+	publishedTime?: string;
 }
 
-const { title, description = SITE.description, image = '/og-default.png' } = Astro.props;
+const {
+	title,
+	description = SITE.description,
+	image = '/og-default.png',
+	type = 'website',
+	publishedTime,
+} = Astro.props;
 
 const pageTitle = title ? `${title} · ${SITE.title}` : `${SITE.title} — ${SITE.tagline}`;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
@@ -18,17 +28,18 @@ const ogImageURL = new URL(image, Astro.site);
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
+<!-- Mobile browser chrome color. Like the favicon, this can only follow the
+     OS-level prefers-color-scheme, not the page's own manual toggle (a
+     static <meta> has no way to react to a JS class change) — same
+     limitation, same reasoning as favicon.svg's media query. -->
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)" />
+
 <!-- Self-hosted (src/styles/fonts.css) — preload only the latin-subset body
      text and mono files, since those render immediately on every page.
      Fraunces (headings only) and the other unicode-range subsets load
      on demand via font-display: swap. -->
-<link
-	rel="preload"
-	href="/fonts/ibm-plex-sans-3.woff2"
-	as="font"
-	type="font/woff2"
-	crossorigin
-/>
+<link rel="preload" href="/fonts/ibm-plex-sans-3.woff2" as="font" type="font/woff2" crossorigin />
 <link
 	rel="preload"
 	href="/fonts/ibm-plex-mono-400-3.woff2"
@@ -50,11 +61,16 @@ const ogImageURL = new URL(image, Astro.site);
 <meta name="description" content={description} />
 
 <!-- Open Graph -->
-<meta property="og:type" content="website" />
+<meta property="og:type" content={type} />
 <meta property="og:url" content={canonicalURL} />
 <meta property="og:title" content={pageTitle} />
 <meta property="og:description" content={description} />
 <meta property="og:image" content={ogImageURL} />
+{
+	type === 'article' && publishedTime && (
+		<meta property="article:published_time" content={publishedTime} />
+	)
+}
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
@@ -66,9 +82,19 @@ const ogImageURL = new URL(image, Astro.site);
 	// Runs before first paint so the correct theme is set before anything
 	// renders — doing this after paint (e.g. in a component's client
 	// script) causes a light-to-dark flash on every load.
-	const stored = localStorage.getItem('theme');
-	const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-	if (stored === 'dark' || (!stored && prefersDark)) {
-		document.documentElement.classList.add('dark');
+	//
+	// localStorage.getItem throws in Safari private browsing / strict
+	// cookie-blocking contexts, which would otherwise kill this script
+	// before the prefers-color-scheme fallback below ever runs.
+	try {
+		const stored = localStorage.getItem('theme');
+		const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+		if (stored === 'dark' || (!stored && prefersDark)) {
+			document.documentElement.classList.add('dark');
+		}
+	} catch {
+		if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+			document.documentElement.classList.add('dark');
+		}
 	}
 </script>

@@ -15,13 +15,10 @@ const counts = await Promise.all(
 		{
 			counts.map(({ tag, count }) => (
 				<a
-					href={`/tags/${tag}/`}
+					href={`/tags/${encodeURIComponent(tag)}/`}
 					class="flex items-center gap-2 rounded-full border border-border py-1 pr-3 pl-1 text-sm transition-colors hover:border-fg-muted"
 				>
-					<span
-						class="h-2.5 w-2.5 rounded-full"
-						style={`background-color: ${tagColorVar(tag)}`}
-					/>
+					<span class="h-2.5 w-2.5 rounded-full" style={`background-color: ${tagColorVar(tag)}`} />
 					<span class="font-mono text-fg">{tag}</span>
 					<span class="font-mono text-xs text-fg-muted">{count}</span>
 				</a>

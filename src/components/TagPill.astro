@@ -1,0 +1,23 @@
+---
+// Shared colored chip for a tag — post list, post header, and the tag
+// archive page all render one of these. (The /tags index page uses a
+// different treatment — a color dot inside an outlined chip — since it's
+// showing counts, not acting as inline metadata; not a duplicate of this.)
+import { tagColorVar } from '../lib/tagColor';
+
+interface Props {
+	tag: string;
+	size?: 'sm' | 'md';
+}
+
+const { tag, size = 'sm' } = Astro.props;
+const sizeClass = size === 'md' ? 'px-3 py-1 text-sm' : 'px-2 py-0.5 text-2xs';
+---
+
+<a
+	href={`/tags/${encodeURIComponent(tag)}/`}
+	class={`tag-pill rounded-full font-mono font-medium transition-opacity hover:opacity-80 ${sizeClass}`}
+	style={`--tag-color: ${tagColorVar(tag)}`}
+>
+	{tag}
+</a>

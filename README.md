@@ -34,43 +34,49 @@ preview` and from the RSS feed — see `src/lib/posts.ts`.
 ## Project structure
 
 ```
+public/
+  _headers              Cloudflare edge headers: long-cache for hashed assets/fonts, security headers
+  fonts/                self-hosted IBM Plex Sans/Mono + Fraunces, subsetted per unicode-range
+  og-default.png         fallback social-share image (posts with a heroImage get their own)
 src/
   content/blog/       posts (.md / .mdx)
   content.config.ts   post frontmatter schema
-  lib/posts.ts         post querying (draft filtering, sorting, tags)
+  lib/
+    posts.ts            post querying (draft filtering, sorting, tags, reading time)
+    tagColor.ts          deterministic tag → color hash, backs the --tag-0..5 palette
   consts.ts             site + author metadata (single source of truth)
-  components/            Header, Footer, PostCard, ThemeToggle, ...
+  styles/
+    global.css            Tailwind 4 config (CSS-first), GitHub light/dark palette, tag/focus/code-block styles
+    fonts.css              generated @font-face rules for the self-hosted fonts above
+  components/
+    Header, Footer, Logo, ThemeToggle, PostCard, TagPill, FormattedDate, BaseHead, ArchiveAxis
   layouts/                BaseLayout, PostLayout
-  pages/                   routes (/, /blog, /blog/[id], /tags/[tag], /about, /rss.xml)
+  pages/                   routes (/, /blog, /blog/[id], /tags, /tags/[tag], /about, /404, /rss.xml)
 ```
+
+`ArchiveAxis` is the homepage's "archive by month" strip; `TagPill` is the
+shared colored tag chip (post list, post header, tag page — see the comment
+in `global.css` on why it deliberately looks different in light vs. dark
+mode). See `AGENTS.md` for the tag-palette/`@theme` gotcha before touching
+either.
 
 ## Deployment
 
-Connected to Cloudflare via **Workers & Pages → Create → Import a
-repository**: every push to `main` deploys automatically, and pull
-requests get preview URLs. Build command `npm run build`, output directory
-`dist`. `wrangler.jsonc` configures it as a pure static-assets deployment
-(no Worker script).
+Connected via Cloudflare's native **Workers Builds** (dashboard → Connect
+to Git), not the Pages-style "Import a repository" flow and not a GitHub
+Actions workflow — there's no CI config committed to this repo. Cloudflare
+listens to GitHub webhooks directly: push to `main` runs `npx wrangler
+deploy` (production), pull requests run `npx wrangler versions upload`
+(preview URL, no promotion). Build command is `npm run build`. All three
+are configured in the Cloudflare dashboard, not in a file here.
+
+`datadave.dev` is registered as a custom domain on the Worker, with
+`www.datadave.dev` redirecting to the apex via a Cloudflare Redirect Rule
+(dashboard-only, not in this repo). Cloudflare's managed Content Signals /
+AI Crawl Control is set to allow AI-answer grounding (search, citations)
+while blocking AI training — also a dashboard setting.
 
 `make deploy` (`wrangler deploy`) is available as a manual fallback.
-
-## Before you launch
-
-A few things are stubbed with `TODO` and need real values before this goes
-live — search for `TODO` or check these directly:
-
-- `src/consts.ts` — author name, email, GitHub, LinkedIn, site description,
-  and whether/how to mention your employer
-- `src/pages/about.astro` — actual bio
-- `src/content/blog/hello-world.mdx` — currently `draft: true`; replace or
-  publish it
-- `public/og-default.png` — placeholder not yet created; add a real 1200×630
-  social share image
-- `src/consts.ts` → `CF_ANALYTICS_TOKEN` — get one from the Cloudflare
-  dashboard (Analytics & Logs → Web Analytics → Add a site) if you want
-  traffic stats; leave empty to skip
-- Register `datadave.dev` as a custom domain on the deployed Worker
-  (Cloudflare sets DNS automatically if the domain is in the same account)
 
 ## i18n
 

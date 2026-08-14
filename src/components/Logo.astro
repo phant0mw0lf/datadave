@@ -12,9 +12,16 @@ const { class: className } = Astro.props;
 ---
 
 <svg viewBox="0 0 100 100" class={className} aria-hidden="true" focusable="false">
-	<line x1="10" y1="55" x2="90" y2="55" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
-	<circle cx="24" cy="55" r="7" fill="var(--tag-2)" />
-	<circle cx="55" cy="55" r="11" fill="var(--tag-0)" />
+	<line
+		x1="10"
+		y1="55"
+		x2="90"
+		y2="55"
+		stroke="currentColor"
+		stroke-width="6"
+		stroke-linecap="round"></line>
+	<circle cx="24" cy="55" r="7" fill="var(--tag-2)"></circle>
+	<circle cx="55" cy="55" r="11" fill="var(--tag-0)"></circle>
 	<circle
 		cx="84"
 		cy="55"
@@ -22,7 +29,6 @@ const { class: className } = Astro.props;
 		fill="none"
 		stroke="var(--tag-1)"
 		stroke-width="3.5"
-		stroke-opacity="0.45"
-	/>
-	<circle cx="84" cy="55" r="15" fill="var(--tag-1)" />
+		stroke-opacity="0.45"></circle>
+	<circle cx="84" cy="55" r="15" fill="var(--tag-1)"></circle>
 </svg>
