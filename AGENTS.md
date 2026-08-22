@@ -18,6 +18,19 @@ scripts still exist because Cloudflare's build environment calls
 - `make serve` — production build via the real Workers runtime (`wrangler dev`)
 - `make deploy` — manual deploy; normally Cloudflare deploys on push to `main`
 
+## Commits & PRs
+
+Use Conventional Commits (`feat:`, `fix:`, `perf:`, `docs:`, `chore:`,
+`refactor:` …) for every commit message **and** for PR titles. One type per
+commit — split a change into multiple commits rather than inventing
+combined types like `perf/a11y:`.
+
+Merge PRs with **rebase merge** (not squash), so those semantic commits
+land on `main` individually — that keeps `git log`/`git blame` granular
+and lets a single `perf:` or `fix:` be reverted on its own. Squash only
+when a branch's history is genuinely noisy (WIP commits), and give the
+squash commit a conventional message.
+
 **`typescript` is pinned to `^6.0.3` on purpose — don't bump it to 7.x.**
 Tested it: TypeScript 7 is the new native/Go-based compiler rewrite and
 doesn't expose the programmatic API `@astrojs/language-server` needs yet, so
