@@ -76,6 +76,17 @@ body {
 	color: var(--color-fg);
 }
 
+/* Cross-document view transitions — a soft crossfade between pages, pure
+   CSS (no client router; every navigation stays a full document load).
+   Progressive enhancement: browsers without @view-transition, or without
+   MQ4 `not (...)` syntax, ignore the whole block and navigate normally.
+   Guarded so reduced-motion users keep instant cuts. */
+@media not (prefers-reduced-motion: reduce) {
+	@view-transition {
+		navigation: auto;
+	}
+}
+
 /* Only the skip link had a visible focus state before this — nav links,
    PostCard/tag links, footer icons, and the code-block copy button all fell
    back to the browser default (or nothing, in some Chromium cases). One
@@ -187,6 +198,36 @@ body {
 .dark .tag-pill {
 	background-color: color-mix(in oklab, var(--tag-color) 15%, transparent);
 	color: var(--tag-color);
+}
+
+/* Avoid single-word last lines and awkward rag in article text — cheap
+   typographic polish, no layout risk (falls back silently where
+   unsupported). Headings already use text-balance via Tailwind classes. */
+.prose p,
+.prose li {
+	text-wrap: pretty;
+}
+
+/* "#" anchor appended to each prose h2/h3 by rehype-autolink-headings
+   (astro.config.mjs) — invisible until the heading is hovered or the
+   anchor itself is focused, so headings stay clean but every section is
+   linkable. */
+.prose .heading-anchor {
+	margin-left: 0.4em;
+	font-family: var(--font-mono);
+	font-weight: 400;
+	color: var(--color-fg-muted);
+	text-decoration: none;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+.prose h2:hover .heading-anchor,
+.prose h3:hover .heading-anchor,
+.prose .heading-anchor:focus-visible {
+	opacity: 1;
+}
+.prose .heading-anchor:hover {
+	color: var(--color-accent);
 }
 
 /* Fraunces is reserved for the post/page h1 only (PostLayout.astro,

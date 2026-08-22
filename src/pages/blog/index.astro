@@ -4,11 +4,35 @@ import PostCard from '../../components/PostCard.astro';
 import { getPosts } from '../../lib/posts';
 
 const posts = await getPosts();
+
+// Group newest-first posts by publication year. The year labels only render
+// once the archive actually spans multiple years — a lone heading over a
+// single-year list is noise, not navigation.
+const years = [...new Set(posts.map((post) => post.data.pubDate.getFullYear()))];
+const groups = years.map((year) => ({
+	year,
+	posts: posts.filter((post) => post.data.pubDate.getFullYear() === year),
+}));
+const showYears = years.length > 1;
 ---
 
 <BaseLayout title="Blog" description="All posts.">
 	<h1 class="font-display text-2xl font-semibold tracking-tight text-fg sm:text-3xl">Blog</h1>
 	<div class="mt-8">
-		{posts.map((post) => <PostCard post={post} />)}
+		{
+			groups.map((group) => (
+				<section class="mt-8 first:mt-0">
+					{showYears && (
+						<h2 class="mb-1 font-mono text-2xs tracking-wider text-fg-muted uppercase">
+							{group.year}
+						</h2>
+					)}
+					{group.posts.map((post) => (
+						<PostCard post={post} />
+					))}
+				</section>
+			))
+		}
+		{posts.length === 0 && <p class="text-fg-muted">No posts yet — check back soon.</p>}
 	</div>
 </BaseLayout>

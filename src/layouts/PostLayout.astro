@@ -1,19 +1,32 @@
 ---
+import type { MarkdownHeading } from 'astro';
 import type { CollectionEntry } from 'astro:content';
 import { Image } from 'astro:assets';
 import BaseLayout from './BaseLayout.astro';
 import FormattedDate from '../components/FormattedDate.astro';
 import TagPill from '../components/TagPill.astro';
 import { SITE } from '../consts';
-import { readingTime } from '../lib/posts';
+import { getPosts, readingTime } from '../lib/posts';
 
 interface Props {
 	post: CollectionEntry<'blog'>;
+	headings?: MarkdownHeading[];
 }
 
-const { post } = Astro.props;
+const { post, headings = [] } = Astro.props;
 const { title, description, pubDate, updatedDate, tags, heroImage, lang } = post.data;
 const minutes = readingTime(post.body ?? '');
+
+// "On this page" only earns its space on posts with real structure — h2
+// sections only (h3s would make it a wall), and at least three of them.
+const toc = headings.filter((heading) => heading.depth === 2);
+const showToc = toc.length >= 3;
+
+// Newest-first already (getPosts sorts); posts sharing at least one tag,
+// self excluded. Renders nothing when there's no overlap.
+const related = (await getPosts())
+	.filter((other) => other.id !== post.id && other.data.tags.some((tag) => tags.includes(tag)))
+	.slice(0, 3);
 
 const jsonLd = {
 	'@context': 'https://schema.org',
@@ -29,7 +42,7 @@ const jsonLd = {
 <BaseLayout
 	title={title}
 	description={description}
-	image={heroImage?.src}
+	image={heroImage?.src ?? `/og/${post.id}.png`}
 	type="article"
 	publishedTime={pubDate.toISOString()}
 	lang={lang}
@@ -62,6 +75,28 @@ const jsonLd = {
 				{tags.map((tag) => <TagPill tag={tag} />)}
 			</div>
 		</header>
+		{
+			showToc && (
+				<nav
+					class="mb-8 rounded-lg border border-border bg-surface px-4 py-3"
+					aria-label="Table of contents"
+				>
+					<div class="font-mono text-2xs tracking-wider text-fg-muted uppercase">On this page</div>
+					<ul class="mt-2 space-y-1 text-sm">
+						{toc.map((heading) => (
+							<li>
+								<a
+									href={`#${heading.slug}`}
+									class="text-fg-muted transition-colors hover:text-accent"
+								>
+									{heading.text}
+								</a>
+							</li>
+						))}
+					</ul>
+				</nav>
+			)
+		}
 		<!-- alt="" below is intentional: hero images are decorative by policy
 		     on this blog (the title/dek already carries the meaning) — there's
 		     no per-post alt-text field in the content schema on purpose. -->
@@ -81,14 +116,37 @@ const jsonLd = {
 		<div class="prose dark:prose-invert max-w-none">
 			<slot />
 		</div>
+		{
+			related.length > 0 && (
+				<aside class="mt-12 border-t border-border pt-6" aria-label="Related posts">
+					<div class="font-mono text-2xs tracking-wider text-fg-muted uppercase">Related posts</div>
+					<ul class="mt-3 space-y-2">
+						{related.map((other) => (
+							<li class="flex flex-wrap items-baseline gap-x-3">
+								<a
+									href={`/blog/${other.id}/`}
+									class="text-sm font-medium text-fg transition-colors hover:text-accent"
+								>
+									{other.data.title}
+								</a>
+								<span class="font-mono text-xs text-fg-muted">
+									<FormattedDate date={other.data.pubDate} lang={other.data.lang} />
+								</span>
+							</li>
+						))}
+					</ul>
+				</aside>
+			)
+		}
 	</article>
 </BaseLayout>
 
 <script>
 	// Wraps each Shiki-rendered code block with a toolbar showing the fenced
 	// language (Shiki already puts it on `data-language`) and a copy button.
-	// Runs once on load — this project has no view transitions, so there's no
-	// need to re-run on navigation.
+	// Runs once on load — the cross-document view transitions in global.css
+	// are CSS-only (no client router), so every navigation is still a full
+	// document load and this re-runs naturally.
 	function enhanceCodeBlocks() {
 		document.querySelectorAll<HTMLPreElement>('pre.astro-code').forEach((pre) => {
 			if (pre.parentElement?.classList.contains('code-block')) return;
