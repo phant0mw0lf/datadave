@@ -3,6 +3,8 @@ import { defineConfig } from 'astro/config';
 import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 import tailwindcss from '@tailwindcss/vite';
+import { rehypeHeadingIds } from '@astrojs/markdown-remark';
+import rehypeAutolinkHeadings from 'rehype-autolink-headings';
 
 // https://astro.build/config
 export default defineConfig({
@@ -15,6 +17,21 @@ export default defineConfig({
 		plugins: [tailwindcss()],
 	},
 	markdown: {
+		rehypePlugins: [
+			// Astro normally injects heading ids AFTER custom rehype plugins run,
+			// so autolink-headings would see none — adding rehypeHeadingIds
+			// explicitly first is the documented fix. Applies to .md and .mdx
+			// alike (the mdx integration extends this markdown config).
+			rehypeHeadingIds,
+			[
+				rehypeAutolinkHeadings,
+				{
+					behavior: 'append',
+					properties: { class: 'heading-anchor', ariaLabel: 'Link to this section' },
+					content: { type: 'text', value: '#' },
+				},
+			],
+		],
 		shikiConfig: {
 			themes: {
 				light: 'github-light',
