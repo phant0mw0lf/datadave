@@ -6,7 +6,13 @@
 export const SITE = {
 	title: 'datadave',
 	tagline: "AI that's built on a real data foundation",
+	/** Third-person site summary for <meta name="description">, og:description,
+	 * and the RSS channel — kept under ~160 chars so search results don't
+	 * truncate it. First-person homepage copy lives in `intro`. */
 	description:
+		'Azure data & AI from the field: lakehouses, pipelines, and governance — and the LLMs, agents, and automation they make work in production.',
+	/** First-person greeting under the homepage h1 — not used in any meta tag. */
+	intro:
 		"I'm an Azure Cloud Architect building data foundations — lakehouses, pipelines, governance — and turning them into AI: LLMs, agents, and automation that hold up in production, not just in demos.",
 	url: 'https://datadave.dev',
 	author: 'David Fengler',
