@@ -7,6 +7,9 @@ import tailwindcss from '@tailwindcss/vite';
 // https://astro.build/config
 export default defineConfig({
 	site: 'https://datadave.dev',
+	// Prefetch every internal link on hover/tap — pages are tiny static HTML,
+	// so this makes navigation feel instant for the cost of a few kB.
+	prefetch: { prefetchAll: true },
 	integrations: [mdx(), sitemap()],
 	vite: {
 		plugins: [tailwindcss()],
