@@ -44,6 +44,12 @@ const dots = chronological.map((post) => ({
 	position: positionFor(post.data.pubDate.valueOf()),
 	color: post.data.tags[0] ? tagColorVar(post.data.tags[0]) : 'var(--color-fg-muted)',
 	title: post.data.title,
+	href: `/blog/${post.id}/`,
+	dateLabel: post.data.pubDate.toLocaleDateString('en-US', {
+		year: 'numeric',
+		month: 'long',
+		day: 'numeric',
+	}),
 }));
 
 const rangeSummary =
@@ -60,24 +66,39 @@ const rangeSummary =
 			<div class="mb-2 font-mono text-[0.65rem] tracking-wider text-fg-muted uppercase">
 				Archive &middot; by date
 			</div>
-			<div class="relative h-8 border-t border-border" aria-hidden="true">
+			<div class="relative h-8 border-t border-border">
 				{ticks.map((tick) => (
 					<>
-						<span class="bg-border absolute -top-px h-1.5 w-px" style={`left: ${tick.position}%`} />
+						<span
+							class="bg-border absolute -top-px h-1.5 w-px"
+							style={`left: ${tick.position}%`}
+							aria-hidden="true"
+						/>
 						<span
 							class="absolute top-2.5 -translate-x-1/2 font-mono text-[0.62rem] text-fg-muted"
 							style={`left: ${tick.position}%`}
+							aria-hidden="true"
 						>
 							{tick.label}
 						</span>
 					</>
 				))}
+				{/* Each dot is a real link to its post (16px hit target around an
+				    8px dot), so keyboard and touch users get the same affordance
+				    the `title` tooltip used to give mouse users only. */}
 				{dots.map((dot) => (
-					<span
-						class="border-bg absolute -top-1 h-2 w-2 -translate-x-1/2 rounded-full border-2"
-						style={`left: ${dot.position}%; background-color: ${dot.color}`}
+					<a
+						href={dot.href}
+						class="group absolute -top-2 flex h-4 w-4 -translate-x-1/2 items-center justify-center"
+						style={`left: ${dot.position}%`}
 						title={dot.title}
-					/>
+						aria-label={`${dot.title} (${dot.dateLabel})`}
+					>
+						<span
+							class="border-bg h-2 w-2 rounded-full border-2 transition-transform duration-150 group-hover:scale-150 group-focus-visible:scale-150"
+							style={`background-color: ${dot.color}`}
+						/>
+					</a>
 				))}
 			</div>
 			<p class="sr-only">

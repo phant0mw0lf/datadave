@@ -28,10 +28,11 @@ const ogImageURL = new URL(image, Astro.site);
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
-<!-- Mobile browser chrome color. Like the favicon, this can only follow the
-     OS-level prefers-color-scheme, not the page's own manual toggle (a
-     static <meta> has no way to react to a JS class change) — same
-     limitation, same reasoning as favicon.svg's media query. -->
+<!-- Mobile browser chrome color. The media queries follow the OS scheme by
+     default; when the user has a stored manual preference, the no-flash
+     script below (and ThemeToggle.astro on click) pins both metas to the
+     chosen theme instead. The favicon keeps the OS-only limitation — a
+     <link> icon can't be repainted the same way. -->
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)" />
 
@@ -89,8 +90,18 @@ const ogImageURL = new URL(image, Astro.site);
 	try {
 		const stored = localStorage.getItem('theme');
 		const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-		if (stored === 'dark' || (!stored && prefersDark)) {
+		const dark = stored === 'dark' || (!stored && prefersDark);
+		if (dark) {
 			document.documentElement.classList.add('dark');
+		}
+		// A stored preference may disagree with the OS scheme the theme-color
+		// metas above track — pin them to the actual theme. (The metas parse
+		// before this script, so they're queryable here, pre-paint.)
+		if (stored) {
+			document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+				meta.setAttribute('content', dark ? '#0d1117' : '#ffffff');
+				meta.removeAttribute('media');
+			});
 		}
 	} catch {
 		if (window.matchMedia('(prefers-color-scheme: dark)').matches) {

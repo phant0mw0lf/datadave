@@ -45,5 +45,11 @@
 		const isDark = document.documentElement.classList.toggle('dark');
 		localStorage.setItem('theme', isDark ? 'dark' : 'light');
 		button.setAttribute('aria-pressed', String(isDark));
+		// Keep the browser-chrome color in step with the page (BaseHead's
+		// metas otherwise track the OS scheme, not this toggle).
+		document.querySelectorAll('meta[name="theme-color"]').forEach((meta) => {
+			meta.setAttribute('content', isDark ? '#0d1117' : '#ffffff');
+			meta.removeAttribute('media');
+		});
 	});
 </script>
