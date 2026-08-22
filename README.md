@@ -67,8 +67,10 @@ to Git), not the Pages-style "Import a repository" flow and not a GitHub
 Actions workflow — there's no CI config committed to this repo. Cloudflare
 listens to GitHub webhooks directly: push to `main` runs `npx wrangler
 deploy` (production), pull requests run `npx wrangler versions upload`
-(preview URL, no promotion). Build command is `npm run build`. All three
-are configured in the Cloudflare dashboard, not in a file here.
+(preview URL, no promotion). The build command runs `astro check` before
+`npm run build`, so type/schema errors fail the deploy instead of shipping
+silently. All three are configured in the Cloudflare dashboard, not in a
+file here.
 
 `datadave.dev` is registered as a custom domain on the Worker, with
 `www.datadave.dev` redirecting to the apex via a Cloudflare Redirect Rule
