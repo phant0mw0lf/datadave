@@ -94,6 +94,9 @@ const ogImageURL = new URL(image, Astro.site);
 		if (dark) {
 			document.documentElement.classList.add('dark');
 		}
+		// Mirror onto data-theme: astro-mermaid (MermaidTheme.astro) and the
+		// integration's own injected CSS key off data-theme, not the .dark class.
+		document.documentElement.dataset.theme = dark ? 'dark' : 'light';
 		// A stored preference may disagree with the OS scheme the theme-color
 		// metas above track — pin them to the actual theme. (The metas parse
 		// before this script, so they're queryable here, pre-paint.)
@@ -104,8 +107,10 @@ const ogImageURL = new URL(image, Astro.site);
 			});
 		}
 	} catch {
-		if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+		const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+		if (dark) {
 			document.documentElement.classList.add('dark');
 		}
+		document.documentElement.dataset.theme = dark ? 'dark' : 'light';
 	}
 </script>

@@ -1,0 +1,101 @@
+---
+// Drives the dark half of the Mermaid palette.
+//
+// astro-mermaid can only bake ONE `themeVariables` object into its build-time
+// page script (astro.config.mjs hardcodes the light set). With `autoTheme`
+// off, that script renders every diagram in the light palette on load and
+// never touches it again. This component:
+//
+//   1. on a dark page, re-renders each diagram once with the dark palette
+//      (the `pre.mermaid` opacity gate in global.css hides that swap), and
+//   2. re-renders on every theme toggle, watching `data-theme` on <html>
+//      (set by ThemeToggle.astro and the pre-paint script in BaseHead.astro).
+//
+// Rendered from BaseLayout so any page — not just posts — can carry a diagram.
+---
+
+<script>
+	import { MERMAID_BASE, MERMAID_LIGHT, MERMAID_DARK } from '../lib/mermaidTheme';
+
+	const diagrams = Array.from(document.querySelectorAll<HTMLElement>('pre.mermaid'));
+
+	// The guard that keeps diagram-free pages at zero extra JS: `mermaid` is
+	// only ever reached through the dynamic import below, never statically.
+	if (diagrams.length > 0) {
+		const prefersDark = () =>
+			document.documentElement.dataset.theme === 'dark' ||
+			document.documentElement.classList.contains('dark');
+
+		let mermaid: typeof import('mermaid').default | undefined;
+
+		async function applyTheme() {
+			// Same chunk astro-mermaid lazy-loads — Vite dedupes it.
+			mermaid ??= (await import('mermaid')).default;
+			mermaid.initialize({
+				startOnLoad: false,
+				theme: 'base',
+				...MERMAID_BASE,
+				themeVariables: prefersDark() ? MERMAID_DARK : MERMAID_LIGHT,
+			});
+
+			for (const el of diagrams) {
+				// Capture the source before the first re-render overwrites the
+				// element with SVG. astro-mermaid sets data-diagram itself, but
+				// not if its own render never ran (see the timeout below).
+				if (!el.hasAttribute('data-diagram')) {
+					el.setAttribute('data-diagram', el.textContent ?? '');
+				}
+				const source = el.getAttribute('data-diagram') ?? '';
+				const id = 'mermaid-rt-' + Math.random().toString(36).slice(2, 11);
+				try {
+					const { svg } = await mermaid.render(id, source);
+					el.innerHTML = svg;
+					el.setAttribute('data-processed', 'true');
+				} catch (error) {
+					console.error('MermaidTheme: re-render failed', error);
+				}
+			}
+		}
+
+		// Serialize every re-render — a toggle firing mid-render would otherwise
+		// run two mermaid.render passes over the same elements at once.
+		let queue = Promise.resolve();
+		const enqueue = () => {
+			queue = queue.then(applyTheme).catch((error) => console.error(error));
+			return queue;
+		};
+
+		// Wait for astro-mermaid's own first pass (it sets data-processed per
+		// diagram as it finishes) so our re-render doesn't race its loop.
+		const integrationDone = new Promise<void>((resolve) => {
+			const allProcessed = () => diagrams.every((el) => el.hasAttribute('data-processed'));
+			if (allProcessed()) return resolve();
+			const observer = new MutationObserver(() => {
+				if (allProcessed()) {
+					observer.disconnect();
+					resolve();
+				}
+			});
+			for (const el of diagrams) {
+				observer.observe(el, { attributes: true, attributeFilter: ['data-processed'] });
+			}
+			// Don't hang forever if the integration script never runs.
+			setTimeout(() => {
+				observer.disconnect();
+				resolve();
+			}, 3000);
+		});
+
+		integrationDone.then(async () => {
+			// Light is already correct from the build-time config; only dark
+			// needs the corrective pass.
+			if (prefersDark()) await enqueue();
+			document.documentElement.setAttribute('data-mermaid-ready', '');
+		});
+
+		new MutationObserver(enqueue).observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ['data-theme'],
+		});
+	}
+</script>
