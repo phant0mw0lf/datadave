@@ -101,6 +101,24 @@ as the text color in dark mode — see the `.tag-pill` rule in `global.css`.
 White-on-solid fails WCAG AA contrast for several of the six colors in dark
 mode; don't revert to it without rechecking contrast.
 
+## Mermaid diagrams
+
+` ```mermaid ` fences render to client-side SVG via `astro-mermaid`. Two
+things about the setup are deliberate and easy to "simplify" wrongly:
+
+- **`autoTheme: false` in `astro.config.mjs`.** With `autoTheme` on, the
+  integration forces Mermaid's stock `default`/`dark` themes and ignores
+  `theme: 'base'` — the only theme that takes a full custom palette. We want
+  the GitHub Primer palette (same reasoning as the Shiki theme choice), so
+  `autoTheme` has to be off.
+- **The palette lives in `src/lib/mermaidTheme.ts`** as literal hex, mirrored
+  from the `--color-*` tokens in `global.css` (Mermaid runs color math over
+  them, so `var()` can't be used). The integration bakes in the light set at
+  build time; `src/components/MermaidTheme.astro` (rendered from
+  `BaseLayout`) swaps to the dark set on load and re-renders on every theme
+  toggle. `mermaid` (~1 MB) is only ever reached through a dynamic `import()`
+  guarded by a `pre.mermaid` DOM check, so diagram-free pages ship none of it.
+
 Fonts are self-hosted (`public/fonts/`, generated `src/styles/fonts.css`) —
 IBM Plex Sans for body/UI, IBM Plex Mono for dates/tags/code, Fraunces for
 display. **Fraunces is reserved for the post/page `<h1>` only** (see
