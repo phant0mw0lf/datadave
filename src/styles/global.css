@@ -131,6 +131,30 @@ body {
 	border: 1px solid var(--color-border);
 }
 
+/* Mermaid diagrams (astro-mermaid) also render into a `pre`, so the typography
+   plugin would sit them on the dark code-block slab. Reset to a plain bordered
+   panel. The integration injects its own `pre.mermaid[data-processed]` rules
+   keyed on `@media (prefers-color-scheme)` — which tracks the OS, not this
+   site's toggle — but `.prose pre.mermaid` (0,2,1) outranks them (0,1,1), so
+   no `!important` needed. */
+.prose pre.mermaid {
+	background: transparent;
+	color: inherit;
+	border: 1px solid var(--color-border);
+	border-radius: 0.5rem;
+	padding: 1rem;
+}
+
+/* Hide the diagram until MermaidTheme.astro has settled the palette, so a
+   dark-mode reader never catches the one corrective light->dark re-render. */
+pre.mermaid {
+	opacity: 0;
+	transition: opacity 150ms ease;
+}
+html[data-mermaid-ready] pre.mermaid {
+	opacity: 1;
+}
+
 /* Code block toolbar — language label + copy button, injected by the script
    in PostLayout.astro around each Shiki `pre.astro-code`. Kept as a sibling
    above the pre (not an absolutely-positioned overlay) so it doesn't fight
