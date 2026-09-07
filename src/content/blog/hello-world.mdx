@@ -37,6 +37,19 @@ def greet(name: str) -> str:
     return f"Hello, {name}!"
 ```
 
+## Diagrams
+
+Fenced `mermaid` blocks render as SVG on the client and follow the light/dark
+toggle, so a diagram never has to be a screenshot checked into the repo:
+
+```mermaid
+flowchart LR
+    A[Markdown] --> B[Astro build]
+    B --> C[Static HTML]
+    C --> D[Cloudflare]
+    D --> E[Reader]
+```
+
 ## Footnotes
 
 MDX supports standard Markdown footnotes.[^1]
