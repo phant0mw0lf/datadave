@@ -1,0 +1,49 @@
+# Dependabot keeps npm packages and (once they exist) GitHub Actions up to
+# date. Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    open-pull-requests-limit: 8
+    # Conventional Commits — matches the repo's commit/PR title convention.
+    commit-message:
+      prefix: chore
+      prefix-development: chore
+      include: scope
+    groups:
+      # One PR a week for the low-risk stuff; majors still come in individually
+      # so each breaking bump stays reviewable and revertable on its own.
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # typescript is pinned to ^6 on purpose — TS 7 (the Go rewrite) breaks
+      # `astro check`. See CLAUDE.md / AGENTS.md. Revisit when the language
+      # server supports it: https://github.com/withastro/roadmap/discussions/1321
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Berlin
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
