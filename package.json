@@ -19,7 +19,7 @@
 		"astro": "^7.3.8",
 		"astro-mermaid": "^2.1.0",
 		"astro-og-canvas": "^0.13.2",
-		"mermaid": "^11.17.2"
+		"mermaid": "^12.1.0"
 	},
 	"devDependencies": {
 		"@astrojs/check": "^0.9.10",
