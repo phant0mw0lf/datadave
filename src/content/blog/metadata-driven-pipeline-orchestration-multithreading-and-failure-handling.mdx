@@ -1,0 +1,206 @@
+---
+title: "Metadata-driven Pipeline Orchestration: Multithreading & Failure Handling"
+description: Part 2 — run the dependency tree in parallel, retry transient errors, and when a table fails, stop only what depends on it.
+pubDate: 2026-10-15
+tags:
+  - data-engineering
+  - pipelines
+  - spark
+  - pipeline-engineering
+draft: false
+---
+
+import { Image } from 'astro:assets';
+import graphLight from '../../assets/blog/multithreading-and-failure-handling/graph-failed-run-light.png';
+import graphDark from '../../assets/blog/multithreading-and-failure-handling/graph-failed-run-dark.png';
+
+**Pipeline Engineering · part 2 of 4** — the executor of [pipetree](https://pipetree.dev), the package from [part 1](/blog/metadata-driven-pipeline-orchestration-the-package-yaml-schema/). Engine-agnostic; parts 3 and 4 put it on Fabric and Databricks.
+
+Here is a run of the example pipeline, seven tables in three layers. I injected two faults: the CRM export is malformed, and the orders source answers with a 429 twice before it lets go.
+
+```text
+bronze.customer: failed after 1 attempt(s): ValueError: malformed export file
+bronze.orders: attempt 1 failed (Throttled: 429 Too Many Requests), retrying in 0.47s
+bronze.orders: attempt 2 failed (Throttled: 429 Too Many Requests), retrying in 0.61s
+bronze.orders: retried→succeeded (attempts=3, 4105ms)
+
+Run 261015095124804: FAILED (exit code 1)
+  failed             bronze.customer                attempts=1
+  succeeded          bronze.employee                attempts=1
+  retried→succeeded  bronze.orders                  attempts=3
+  upstream_failed    gold.dim_customer              attempts=0
+  upstream_failed    gold.fact_sales                attempts=0
+  upstream_failed    silver.customer_enriched       attempts=0
+  succeeded          silver.orders                  attempts=1
+```
+
+Three tables succeeded (one of them on the third attempt), one failed, and three never started. The run still exits with 1, but only after everything that *could* run has run.
+
+<figure>
+  <Image src={graphLight} alt="pipetree's dependency graph after the run. bronze.customer is marked failed; silver.customer_enriched, gold.dim_customer and gold.fact_sales are marked upstream_failed. bronze.employee, bronze.orders (with a dashed border for the retries) and silver.orders succeeded." widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="dark:hidden rounded-md border border-[var(--color-border)]" />
+  <Image src={graphDark} alt="" aria-hidden="true" widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="hidden dark:block rounded-md border border-[var(--color-border)]" />
+  <figcaption>The same run as pipetree draws it: one column per wave, the failed table in orange, its descendants dashed and pink, and the dashed border on <code>orders</code> marking a table that needed a retry.</figcaption>
+</figure>
+
+A failure should stop exactly the tables that depend on it, and nothing else. A job that dies on the first exception throws away every table that was perfectly healthy. A job that ignores the exception and carries on feeds `gold.dim_customer` a stale or empty `bronze.customer` and calls it a success.
+
+## One counter per table
+
+Part 1 ended on the claim that execution follows the tree rather than the layers. Here is what that costs to implement: one integer per table, the number of parents that haven't finished yet.
+
+```python
+pending_parents = {
+    fqn: len([p for p in graph.edges.get(fqn, ()) if p in run_set])
+    for fqn in run_set
+}
+
+with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    futures = {}
+    for fqn, count in pending_parents.items():
+        if count == 0:
+            futures[pool.submit(_run_with_retries, graph.tables[fqn], ...)] = fqn
+
+    while futures:
+        done, _ = wait(list(futures), return_when=FIRST_COMPLETED)
+        for future in done:
+            fqn = futures.pop(future)
+            result = future.result()
+            results[fqn] = result
+            if result.status == TableStatus.FAILED:
+                _mark_upstream_failed(fqn, graph, results, settled)
+            else:
+                for child in graph.reverse_edges.get(fqn, ()):
+                    if child in settled:
+                        continue
+                    pending_parents[child] -= 1
+                    if pending_parents[child] == 0:
+                        futures[pool.submit(_run_with_retries, graph.tables[child], ...)] = child
+```
+
+Tables without parents go into the pool first. Whenever any table finishes, its children's counters go down by one, and a child whose counter hits zero is submitted on the spot. No layer ever gates anything: `gold.fact_sales` starts the moment `silver.orders` is done, even if `bronze.employee` is still running.
+
+(I trimmed the real function to this skeleton. It also handles tables outside a `--select`, progress events and a few warnings, and none of that changes the shape.)
+
+The part I'm happiest with is what's missing: there are no locks. `pending_parents`, `results` and `settled` are only ever touched by the one thread running this loop. The workers just run `adapter.run_table` and hand a `TableResult` back through their future. Most of the scheduler bugs I've had to chase came from two threads touching the same bookkeeping, so I made that impossible rather than careful. The only locks in the repo are in the test code.
+
+Threads are enough because the work isn't Python. A table spends its time inside Spark or waiting on a source, so the GIL never becomes the bottleneck, and Spark's own [job scheduling](https://spark.apache.org/docs/latest/job-scheduling.html#scheduling-within-an-application) is built around multiple threads submitting jobs from one session. The pool size is `--max-workers`, default 4. It's a fixed number: it caps how many tables compete for the same cluster, and the right value depends on that cluster, not on the pipeline.
+
+## Retry what can be retried
+
+I split failures into two groups. Throttling, a timeout, a dropped connection: waiting a second fixes it. A malformed export, a missing column, a failed merge condition: waiting never fixes it, and retrying only burns time. The executor retries the first group and fails the second one immediately, which is why `bronze.customer` in the run above tried once and `bronze.orders` tried three times.
+
+```python
+@dataclass(frozen=True)
+class RetryPolicy:
+    max_attempts: int = 3
+    base_delay: float = 0.5
+    max_delay: float = 30.0
+    transient_exceptions: tuple[type[Exception], ...] = (
+        Throttled, TimeoutError, ConnectionError,
+    )
+    is_transient: Callable[[Exception], bool] | None = None
+
+    def classify(self, exc: Exception) -> bool:
+        if isinstance(exc, self.transient_exceptions):
+            return True
+        if self.is_transient is not None:
+            return self.is_transient(exc)
+        return False
+```
+
+`Throttled` is pipetree's own exception for "the source pushed back"; the other two are Python's builtins. Three attempts, not three retries: for a batch pipeline that is enough to ride out a throttling window, and short enough that a source that is really down doesn't hold the run for minutes. The delay between attempts is full jitter: a random value between zero and `min(max_delay, base_delay * 2 ** attempt)`. That's the 0.47 s and 0.61 s in the log above (the caps were 1 s and 2 s, and the draw can land anywhere below them). Plain exponential backoff would send every throttled table back at the same moment, and then they all get throttled again.
+
+Classification is by exception type. The executor never looks at an HTTP status code or an error message; it asks `isinstance` and, failing that, the `is_transient` predicate. The alternative is teaching the executor the error shapes of every source, which is exactly the per-system special-casing this package exists to avoid.
+
+The translation is the adapter's job. A Delta commit conflict or a throttled storage account reaches Python as a plain `Py4JJavaError`, and nothing in the executor knows what that is; the adapter that raised it has to re-raise it as one of the three types, or hand `RetryPolicy` an `is_transient` predicate that recognises it. The Spark adapter gets that mapping in the next release. In 0.1.0 the predicate is the way to retry engine errors, and the `Throttled` in the log above comes from the fault-injecting adapter the demo wraps around the real one.
+
+```python
+def spark_is_transient(exc: Exception) -> bool:
+    text = str(exc)
+    return "ConcurrentAppendException" in text or "ServerBusy" in text
+
+run_pipeline(..., retry_policy=RetryPolicy(is_transient=spark_is_transient))
+```
+
+That is string matching on a Java stack trace, which is why it belongs in the predicate and not in the executor.
+
+### The one write you can't just retry
+
+`scd1`, `scd2` and `replace` are idempotent: run them twice and the table looks the same. `append` isn't. A retry after a partial write duplicates rows. So `append` only retries when the adapter declares it can undo the failed attempt, meaning it can delete this run's rows before the next attempt:
+
+```python
+if can_retry and table.strategy == "append":
+    if adapter.capabilities.supports_delete_by_execution_id:
+        adapter.delete_by_execution_id(table, execution_id)
+    else:
+        can_retry = False
+```
+
+Every row carries the `_execution_id` of the run that wrote it, so on Delta that's a single `DELETE ... WHERE _execution_id = <this run>`. Without an engine that can do that, an `append` that hits a transient error fails on the first attempt.
+
+I considered the other way: always retry and let a downstream dedup pass clean up. I rejected it because it turns a correctness problem (don't write duplicates) into a quality problem (find and remove them later), and because the table would then behave differently depending on how careful whoever reads it downstream happens to be.
+
+## What a failure stops
+
+When a table runs out of attempts, the loop above calls `_mark_upstream_failed`, which walks the tree below it:
+
+```python
+stack = list(graph.reverse_edges.get(failed_fqn, ()))
+while stack:
+    fqn = stack.pop()
+    if fqn in settled:
+        continue
+    settled.add(fqn)
+    results[fqn] = TableResult(
+        table_fqn=fqn,
+        status=TableStatus.UPSTREAM_FAILED,
+        attempts=0,
+        details={"failed_ancestor": failed_fqn},
+        ...
+    )
+    stack.extend(graph.reverse_edges.get(fqn, ()))
+```
+
+Every descendant is marked `upstream_failed` with the name of the ancestor that caused it, and never starts. The `settled` set matters because a table can sit below two failed ancestors, or below a failed and a healthy one. `gold.fact_sales` is the example in the run above: it reads `silver.orders` and `gold.dim_customer`. `bronze.customer` fails, `gold.dim_customer` is marked `upstream_failed`, and so is `gold.fact_sales`. When `silver.orders` finishes later, `fact_sales` is already settled and isn't submitted, even though one of its two parents is perfectly fine. A table runs only if every one of its parents succeeded.
+
+Everything outside that subtree is untouched. `bronze.employee` and `silver.orders` have no path from `bronze.customer`, so they run to completion as if nothing had happened.
+
+I also kept `failed` and `upstream_failed` as separate statuses on purpose. "Seven tables failed" and "one table failed, six never started" are different incidents, and you want the error of the one table that failed, not six `upstream_failed` rows that never ran.
+
+## The digest and the exit code
+
+The executor doesn't raise on a failed table. It returns a `RunDigest`: the execution id and a `TableResult` for every table, with status, attempts, duration and the error type and message if there was one. The exit code follows from it:
+
+```python
+@property
+def succeeded(self) -> bool:
+    return not any(
+        r.status in {TableStatus.FAILED, TableStatus.UPSTREAM_FAILED}
+        for r in self.results.values()
+    )
+```
+
+So the run as a whole is red when anything failed, and the scheduler above still got to run every table it could. A table you deliberately left out with `--select` doesn't count against it.
+
+The same results go to a run log: one row per table and run, with `_execution_id`, status, attempts, duration and the error. In Delta I write it once at the end of the run with a `replaceWhere` on the execution id, so re-running a crashed execution replaces its rows instead of duplicating them. The CLI keeps these rows in memory unless you hand `run_pipeline` a `DeltaRunLogWriter`.
+
+A failed run can also send one email through Azure Communication Services that lists the failed tables and their errors; the setup is in the [notifications guide](https://pipetree.dev/guides/notifications/).
+
+## Try it
+
+The package is on PyPI as `pipetree-meta` (0.1.0; the `spark` extra adds PySpark and Delta), with docs at [pipetree.dev](https://pipetree.dev). The run at the top is `examples/run_demo.py` in the repo, so you need a [clone of the repo](https://github.com/phant0mw0lf/pipetree). It wraps the real Spark adapter in the fault-injecting one, which means the two faults are injected, not found. You also need Python 3.11 or newer, [`uv`](https://docs.astral.sh/uv/) and a JDK for local Spark (`brew install openjdk@17`, with `JAVA_HOME` pointing at it):
+
+```bash
+git clone https://github.com/phant0mw0lf/pipetree
+cd pipetree
+uv sync --extra spark --dev
+uv run python examples/run_demo.py
+```
+
+The jitter makes the delays different on every run, and the exit code stays 1.
+
+For a failure nobody injected, run `uv run python examples/with_problems/run.py`. There `gold.dim_customer` selects a column that doesn't exist, Spark rejects it with a real `AnalysisException`, and `gold.fact_sales` below it ends as `upstream_failed`. It isn't transient, so the table fails after one attempt. The same data also plants duplicate keys and a NULL key that succeed quietly, which is what a later post is about.
+
+## What's next
+
+The executor doesn't know whether it's running on Fabric or Databricks, and that's the point. Part 3 puts it on Fabric and pits Spark with the package against Data Factory pipelines. Part 4 does the same on Databricks against Declarative Pipelines.
