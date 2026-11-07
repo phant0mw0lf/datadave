@@ -1,0 +1,159 @@
+---
+title: "Metadata-driven Pipeline Orchestration: Two Ways on Fabric"
+description: "Part 3 — pipetree in one Notebook activity next to a Fabric data pipeline with one activity per table: who owns the tree, where the 120-activity limit lands, and what you rewrite when you leave."
+pubDate: 2026-11-10
+tags:
+  - data-engineering
+  - pipelines
+  - spark
+  - fabric
+  - pipeline-engineering
+draft: false
+---
+
+import { Image } from 'astro:assets';
+import aLiveGraph from '../../assets/blog/two-ways-on-fabric/a-livegraph.png';
+import bCanvas from '../../assets/blog/two-ways-on-fabric/b-pipeline-canvas.png';
+
+**Pipeline Engineering · part 3 of 4** — [pipetree](https://pipetree.dev) on Microsoft Fabric, next to what Fabric itself offers for the same job. The package and its YAML are [part 1](/blog/metadata-driven-pipeline-orchestration-the-package-yaml-schema/), the executor is [part 2](/blog/metadata-driven-pipeline-orchestration-multithreading-and-failure-handling/), Part 4 does the same exercise on Databricks; it follows.
+
+Here is the seven-table example from part 2 again, with the same two injected faults: a malformed CRM export, and an orders source that answers 429 twice. This time it ran as a Fabric data pipeline with a single Notebook activity, and the digest is a query on the run log pipetree wrote into the lakehouse:
+
+```text
+SELECT table_fqn, status, attempts, duration_ms, error_message
+FROM _meta.pipeline_run_log WHERE _execution_id = 261105095551309
+
+bronze.orders             retried→succeeded  3  30430
+bronze.customer           failed             1      3  malformed export file
+bronze.employee           succeeded          1  33963
+silver.orders             succeeded          1   7887
+silver.customer_enriched  upstream_failed    0      0
+gold.dim_customer         upstream_failed    0      0
+gold.fact_sales           upstream_failed    0      0
+```
+
+Same rows as on a laptop and as on Databricks. That was the promise of parts 1 and 2, and it's the least interesting thing in this post.
+
+The interesting thing is the other way of doing it. Fabric's own orchestrator is the data pipeline — the Data Factory item — activities on a canvas, arrows between them, a retry policy per activity. I built the same seven tables that way too — one Notebook activity per table — ran both on the same workspace, broke both the same way, and compared. Not "which is better", but which *unit* each one orchestrates, what a failure does, and what you rewrite when you leave.
+
+## The two variants
+
+| | A — the package | B — a pipeline with activities |
+|---|---|---|
+| Who owns the dependency tree | pipetree, inside one Notebook activity | the data pipeline (`dependsOn`, one activity per table) |
+| The unit it schedules | a table | an activity (a notebook run) |
+| What runs per table | pipetree's merge | pipetree's merge, `select=<table>` |
+| The definition | `pipeline.yaml` + the logic files | `pipeline-content.json`, 7 activities, generated from the YAML |
+
+Both variants run the *same notebook*. It takes a `select` parameter from the activity: empty means the whole tree, a table name means that one table. So the merge code is identical and only the orchestration moves — in A pipetree schedules, retries and logs; in B the pipeline does. Both are data pipelines, too: A is a pipeline with one activity, which is how you'd trigger the package on a schedule anyway.
+
+I didn't draw B's canvas. A script walks pipetree's dependency tree and writes the pipeline definition — the same JSON the pipeline canvas saves, with `dependsOn` from the edges and a retry policy on each activity — and creates both pipelines through the REST API. The generated files are committed in [datadave-fabric-examples](https://github.com/phant0mw0lf/datadave-fabric-examples) so you can read them without a workspace: 57 lines for A, 331 for B.
+
+```json
+{
+  "name": "gold__fact_sales",
+  "type": "TridentNotebook",
+  "dependsOn": [
+    { "activity": "gold__dim_customer", "dependencyConditions": ["Succeeded"] },
+    { "activity": "silver__orders", "dependencyConditions": ["Succeeded"] }
+  ],
+  "policy": { "retry": 2, "retryIntervalInSeconds": 30, "timeout": "0.12:00:00" },
+  "typeProperties": {
+    "notebookId": "...", "workspaceId": "...",
+    "parameters": { "select": { "value": "gold.fact_sales", "type": "string" }, "..." : "..." }
+  }
+}
+```
+
+## What Fabric needs from the package
+
+Part 2's executor doesn't know it's on Fabric. The seam that does is `FabricPlatform`, and it's small: secrets through `notebookutils.credentials.getSecret`, tokens through `getToken`, and one path rule. The YAML's relative paths (`data/customer.csv`) resolve to `Files/<path>` on the default lakehouse for Spark, while the notebook opens the YAML itself through the mount, `/lakehouse/default/Files/...`. Two spellings of one folder; [pipetree's Fabric guide](https://pipetree.dev/guides/fabric/) warns about it because I mixed them up first.
+
+```python
+platform = FabricPlatform(notebookutils, key_vault_url=KEY_VAULT_URL)
+adapter = SparkAdapter(spark, systems=config.systems, base_dir=config_path.parent, platform=platform)
+digest = run_pipeline(config_path, adapter=adapter, select=selected,
+                      run_log_writer=DeltaRunLogWriter(spark), observer=LiveGraphView())
+```
+
+Three things about the setup that cost me time and are worth a line each:
+
+- **Runtime 2.0.** New workspaces still default to Runtime 1.3 (Spark 3.5). The gold dimension in the 171-table bench pipeline (more on it below) uses a surrogate key, which is a Delta identity column, and 1.3 can't write one. pipetree refuses with a clear message, the notebook's first cell refuses earlier, and the fix is a workspace setting.
+- **No `%pip` in a pipeline run.** The magic restarts the interpreter, which ends the session the activity is waiting on. The notebook installs pipetree from PyPI with `pip` in a subprocess into `/tmp` and puts that on `sys.path`. An Environment item with the wheel is the tidy version; this one needs no setup.
+- **Checkpoints survive you.** The package can't clear its own Auto Loader checkpoints on Fabric. A re-run that should start from scratch needs `notebookutils.fs.rm("Files/_checkpoints", True)` *and* `init=True` (the full-reload parameter), or the streamed tables see nothing new. Clearing the checkpoints alone re-reads every file and appends every row again.
+
+None of that is pipetree's logic — Spark is Spark, Delta is Delta, and the scale bench's edge-case suite passes on Runtime 2.0 (Spark 4.1.1) exactly as on Databricks. It's the platform's edges, and the package has to know them.
+
+## A: one activity, the package
+
+<figure>
+  <Image src={aLiveGraph} alt="pipetree's LiveGraphView in the notebook snapshot of the Notebook activity, after the fault run: execution 261105095551309, FAILED, 38.3 seconds, seven tables in four waves. bronze.customer is marked failed, customer_enriched, dim_customer and fact_sales upstream_failed, orders retried and succeeded, employee and silver.orders succeeded. Below it the run digest with status, attempts, duration and error per table." widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="rounded-md border border-[var(--color-border)]" />
+  <figcaption>The notebook snapshot Fabric keeps for the activity, with the package's own view of the run: 38 seconds of pipetree inside an activity that took 223, the rest being session start and <code>pip</code>. The pipeline sees one activity that failed; this is why.</figcaption>
+</figure>
+
+One thing the activity around the package did that the package wouldn't: I gave it the same retry policy as B's activities (two retries, thirty seconds apart). When pipetree ended with exit code 1 because of the malformed export, the activity ran the **whole notebook again**, twice: 223, 190 and 234 seconds, twelve minutes for a failure the package had classified as permanent in three milliseconds. A retry policy on an activity can't see inside it. Set it to zero around the package; the package retries what can be retried.
+
+The clean run: **53 seconds** for all seven tables, inside an activity that took 304 — the other four minutes were a Spark session starting on a trial capacity and `pip` fetching pipetree. The three bronze tables ran side by side (25 s each), the two silver tables started the moment their parent finished, and `gold.fact_sales` waited for both of its parents.
+
+## B: one activity per table
+
+The clean run took **924 seconds** — fifteen minutes for the same seven tables. Every activity is its own notebook session, so every table pays the four minutes of session start and `pip` that A paid once: the activities ran 170 to 250 seconds each, and inside each one pipetree spent 24 to 33 seconds on its single table. The critical path is four sessions deep (bronze, silver, the dimension, the fact), so the arithmetic is four session starts, not one.
+
+Two of the three bronze activities also failed on their first attempt. Three fresh sessions, started at the same second by the pipeline, and Fabric's notebook service reported a generic failure for two of them, with no run-log row to show for it. The activities' retry policy ran them again thirty seconds later and both succeeded. My best guess is three first writes into the one run-log table they share, landing at the same moment; I couldn't get more than the generic error out of Fabric, so it stays a guess. (On Databricks, B's three bronze tasks start the same way and didn't trip over each other.) In A it can't happen either way: one process, one run log, one writer.
+
+<figure>
+  <Image src={bCanvas} alt="The Fabric data pipeline canvas of variant B after the fault run: seven Notebook activities joined by On success arrows. bronze__customer carries a red failure icon; silver__customer_enriched, gold__dim_customer and gold__fact_sales carry no status icon because they were skipped; bronze__orders, silver__orders and bronze__employee carry a green success icon." widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="rounded-md border border-[var(--color-border)]" />
+  <figcaption>The pipeline's view of the same two faults. The tree is the one from the YAML, written into <code>dependsOn</code> by the generator; the pipeline knows the edges, not where they came from.</figcaption>
+</figure>
+
+### The same faults
+
+With the two faults, B behaves like A in one respect and differently in two — and part 4 will show the same pattern with a Databricks job.
+
+`bronze.orders` succeeded on its first activity attempt, because the retry that got it there was **pipetree's**, inside the activity (`retried→succeeded`, three attempts, in the run log). The activity's own retry policy only ever meets the errors the package has already classified as permanent, and retries them anyway: `bronze__customer` ran three times — 218, 217 and 159 seconds, each a fresh session and a fresh `pip` — for a malformed file that pipetree fails after one look. Eleven minutes on one table; the pipeline as a whole took 674 seconds to say what pipetree decided in three milliseconds.
+
+The dependents did stop. `silver__customer_enriched`, `gold__dim_customer` and `gold__fact_sales` never ran, because their `dependsOn` says `Succeeded` and their parent didn't. That's the one thing the pipeline does exactly as well as the package, as long as one table stays one activity.
+
+And the run log is the wrong shape. The Monitor hub knows activities; it doesn't know what a table is. The seven rows at the top of this post exist in B only because every activity's pipetree writes its own — so one pipeline run produced **five execution ids and 35 rows**, 30 of them `skipped` (in the run, but outside `select`), since each activity's pipetree sees a seven-table pipeline and runs one of them. (It should have been six: one of `bronze__customer`'s three attempts left no row at all, which is the race from the clean run again.)
+
+## What scales with the number of tables
+
+Seven activities fit on a screen. The bench pipeline from the scale tests has 171 tables, and the same generator produces its definition:
+
+| | 7 tables | 171 tables |
+|---|---|---|
+| `pipeline.yaml` | 74 lines | 1,870 lines |
+| B: `pipeline-content.json` | 223 lines, 5.5 KB (`select` only; the committed file with the fault parameters is 331) | 5,112 lines, 132 KB |
+| Activities per pipeline | 7 | 171 — **two pipelines** |
+
+The second column is where Fabric draws a line that Databricks doesn't: a data pipeline holds at most [120 activities](https://learn.microsoft.com/en-us/fabric/data-factory/data-factory-limitations), container children included, and 200 KB of definition. At 171 tables the tree has to be cut into two pipelines, and `dependsOn` doesn't cross that cut — the second pipeline starts when the first one *ends*, not when the tables it needs are done. The ForEach activity doesn't help either: it runs its items in parallel, up to 50, with no idea which item depends on which.
+
+And the definition is *in addition* to the YAML, since the activities still call pipetree. Adding table 172 means a YAML block and an activity with the right `dependsOn`, or re-running the generator — at which point the YAML is the source of truth and the pipeline is a build artifact, and you've arrived at the package's model with an extra step, plus a cut the YAML never asked for.
+
+## What the pipeline has that the package doesn't
+
+Connectors. None of the above is a reason to delete your data pipelines: a Copy activity reaches a SQL Server behind a firewall through the on-premises data gateway with nothing more than a Windows service on a machine that can see it, and the package has no answer to that. So the honest shape is a hybrid — Copy to a landing folder, a `storage_stream` system (pipetree's Auto Loader reader over a folder) from there, and the tree stays whole. The seam is one Copy activity whose failure the pipeline reports instead of the package, and that's a seam you can see.
+
+## Where the lock-in actually is
+
+The question that matters: **which file do you rewrite when you leave?**
+
+- A: nothing. `pipeline.yaml` and the logic files ran on a laptop in part 2, here on Fabric, and in part 4 on Databricks — the same bytes. Even the notebook is nine lines of seam.
+- B: `pipeline-content.json`, every line of it. The arrows, the retry policy, the parameters: a restatement of the tree in a format only Fabric reads, and one that Fabric's own limit says stops working at 120 tables.
+
+Both give you edges and a retry policy; that part is table stakes. The package schedules tables, the pipeline schedules activities. Activities are tables only while you keep them that way, and the limit is the first thing that makes you stop.
+
+## Try it
+
+[datadave-fabric-examples](https://github.com/phant0mw0lf/datadave-fabric-examples), folder `pipeline-engineering-part-3`: the notebook, the generator, the two generated pipelines, and a `deploy.py` that creates everything in a workspace through the REST API and runs it. You need a workspace on any capacity (a trial works), `az login` into its tenant, and `uv`; pipetree comes from PyPI inside the notebook.
+
+```bash
+uv run --with "pipetree-meta==0.1.1" python deploy/deploy.py deploy --workspace <id>
+uv run --with "pipetree-meta==0.1.1" python deploy/deploy.py run A --workspace <id>
+```
+
+The faults are a pipeline parameter; `run A --faults '{...}'` reproduces the digest at the top.
+
+## What's next
+
+Part 4, Databricks: the same seven tables three ways — the package, a job with a task per table, and a Lakeflow Declarative Pipeline as the third variant — and the finding that a malformed export doesn't fail there at all; it loads.
