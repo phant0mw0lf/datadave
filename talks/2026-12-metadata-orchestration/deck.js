@@ -18,7 +18,7 @@ const img = (f) => path.join(__dirname, 'img', f);
 	const variant = process.argv[2] === 'light' ? 'light' : 'dark';
 	const d = createDeck(variant, { title: 'Stop Copy-Pasting Your Pipelines' });
 	const { p } = d;
-	const TOTAL = 5;
+	const TOTAL = 6;
 
 	// ───────────────────────── opening ─────────────────────────
 	d.section('Opening');
@@ -34,10 +34,11 @@ const img = (f) => path.join(__dirname, 'img', f);
 			['The problem', 'ten systems, ten copies'],
 			['The model', 'YAML schema and lakehouse layout'],
 			['The executor', 'parallel runs, retries, failures, logging'],
+			['Two ways on Fabric', 'the package vs a pipeline with an activity per table'],
 			['Design decisions', 'what worked, what didn’t'],
 			['Live demo', 'a new source in Fabric, end to end'],
 		],
-		notes: 'Ca. 45 min Vortrag, dann Demo, dann Q&A.',
+		notes: 'Ca. 45–50 min Vortrag, dann Demo, dann Q&A. Einordnung gleich hier sagen: Ich zeige das an meinem Open-Source-Paket pipetree — die Ideen funktionieren aber auch ohne, und ich zeige auch, wo andere Werkzeuge besser sind.',
 	});
 
 	// ───────────────────────── 01 problem ─────────────────────────
@@ -147,11 +148,29 @@ const img = (f) => path.join(__dirname, 'img', f);
 		kicker: '// 02 · the lakehouse',
 		title: 'One lakehouse, a schema per layer',
 		cards: [
-			{ head: 'bronze · silver · gold', text: 'Schemas in one Fabric lakehouse, not one lakehouse per layer. Layers organise — they don’t gate execution.' },
+			{ head: 'A schema per layer', text: 'All layers in one Fabric lakehouse, not one lakehouse per layer. The example uses bronze · silver · gold.' },
 			{ head: 'Files/', text: 'pipeline.yaml, the logic notebooks and landed source files. Versioned in the repo, deployed together.' },
 			{ head: '_meta', text: 'pipeline_run_log: one row per table and run. Audit columns on every row, keyed to the same run.' },
 		],
 		notes: 'Bewusst ein Lakehouse mit Schemas pro Layer. Die Layer sind Namensräume in der YAML, keine Ausführungsgrenze.',
+	});
+	d.twoColSlide({
+		kicker: '// 02 · the lakehouse',
+		title: 'Layers are names, not stages',
+		leftHead: 'one task per layer',
+		left: [
+			'Every new layer is a new job step and new wiring',
+			'The slowest table in a layer holds up the next layer',
+			'So everything gets squeezed into three layers',
+		],
+		rightHead: 'when the tree drives execution',
+		right: [
+			'A layer is a top-level key in the YAML — name it anything',
+			'landing · staging · intermediate · serving, or ten of them',
+			'Same table name in every layer: staging.orders, serving.orders',
+			'Execution follows the tree, so a layer costs nothing',
+		],
+		notes: 'Aus Projekten: Bronze/Silver/Gold wird oft als feste Regel gelebt. Der Grund ist meist die Orchestrierung — ein Task pro Layer, dann ist jeder zusätzliche Layer teuer und wartet auf den langsamsten Tisch davor. In pipetree ist ein Layer nur ein Namensraum (und das Default-Schema). Die Reihenfolge kommt aus dem Graphen, also kann man so viele Layer haben, wie die Daten brauchen. Medaillon ist ein Beispiel, kein Gesetz.',
 	});
 	d.twoColSlide({
 		kicker: '// 02 · the lakehouse',
@@ -163,13 +182,25 @@ const img = (f) => path.join(__dirname, 'img', f);
 		notes: 'Die Frage nach dem Timestamp-Format kommt immer: bigint YYMMddHHmmssSSS, UTC. Lesbar ohne Konvertierung, gleiches Format wie _execution_id. Trade-off: zweistelliges Jahr.',
 	});
 
+	d.cardsSlide({
+		kicker: '// 02 · alternatives',
+		title: 'You don’t need my package',
+		cards: [
+			{ head: 'Fabric / Data Factory', text: 'Metadata-driven copy on control tables. Strong at ingestion — and stops there.' },
+			{ head: 'dbt', text: 'Transformations as configuration, in SQL. Never touches the extract.' },
+			{ head: 'Databricks dlt-meta', text: 'Metadata-generated Lakeflow pipelines. Databricks only.' },
+			{ head: 'pipetree', text: 'One YAML from source to star schema, the same on Fabric and Databricks.' },
+		],
+		notes: 'Ehrlich einordnen: Die Idee ist nicht neu. Data Factory/Fabric haben das metadata-driven copy auf Kontrolltabellen, dbt macht Transformationen deklarativ, Databricks Labs hat dlt-meta. pipetree füllt die Lücke dazwischen: Extract bis Modellierung in einer YAML, plattformübergreifend. Wer nur kopiert, ist mit Data Factory gut bedient.',
+	});
+
 	// ───────────────────────── 03 executor ─────────────────────────
 	d.section('03 The executor');
 	d.sectionSlide({ num: 3, total: TOTAL, title: 'Run the tree, not the layers', subtitle: 'Parallel, with retries, and failures that stop only what depends on them' });
 	d.codeSlide({
 		kicker: '// 03 · the executor',
 		title: 'One counter per table',
-		filename: 'pipetree/executor/runner.py (trimmed)',
+		filename: 'executor (trimmed)',
 		lines: [
 			[['pending', 'text'], [' = ', 'keyword'], ['{t: ', 'text'], ['len', 'entity'], ['(parents[t]) ', 'text'], ['for', 'keyword'], [' t ', 'text'], ['in', 'keyword'], [' run_set}', 'text']],
 			[['submit', 'entity'], ['(t ', 'text'], ['for', 'keyword'], [' t, n ', 'text'], ['in', 'keyword'], [' pending.items() ', 'text'], ['if', 'keyword'], [' n ', 'text'], ['==', 'keyword'], [' ', 'text'], ['0', 'constant'], [')', 'text']],
@@ -231,29 +262,78 @@ const img = (f) => path.join(__dirname, 'img', f);
 		notes: 'Run-Log einmal am Ende mit replaceWhere auf die Execution-ID — ein erneuter Lauf derselben Execution dupliziert nichts. Live-Graph zeige ich gleich in der Demo.',
 	});
 
-	// ───────────────────────── 04 decisions ─────────────────────────
-	d.section('04 Design decisions');
-	d.sectionSlide({ num: 4, total: TOTAL, title: 'What worked, what didn’t', subtitle: 'And what I’d change today' });
+	// ───────────────────────── 04 fabric ─────────────────────────
+	d.section('04 Two ways on Fabric');
+	d.sectionSlide({ num: 4, total: TOTAL, title: 'Two ways on Fabric', subtitle: 'The same seven tables — once in one activity, once as an activity per table' });
 	d.cardsSlide({
-		kicker: '// 04 · design decisions',
+		kicker: '// 04 · two ways on fabric',
+		title: 'Same notebook, different orchestrator',
+		cards: [
+			{ head: 'A — one activity', text: 'A data pipeline with a single Notebook activity. pipetree owns the tree, the retries and the run log.' },
+			{ head: 'B — activity per table', text: 'One Notebook activity per table, dependsOn generated from the YAML. The pipeline owns the tree.' },
+		],
+		notes: 'Beide Varianten führen dasselbe Notebook aus, B mit select=<tabelle>. Der Merge-Code ist identisch, nur die Orchestrierung wandert. B habe ich nicht gezeichnet, sondern aus dem YAML-Baum generiert (pipeline-content.json). Details: Teil 3 der Blog-Serie, Code in datadave-fabric-examples.',
+	});
+	d.statSlide({
+		kicker: '// 04 · two ways on fabric',
+		title: 'Seven tables, clean run',
+		stats: [
+			{ value: '53 s', label: 'A: pipetree for all seven tables, inside one activity', color: p.green },
+			{ value: '924 s', label: 'B: every activity is its own session — four session starts on the critical path', color: p.orange },
+			{ value: '120', label: 'activities max per Fabric data pipeline — 171 tables need two', color: p.red },
+		],
+		notes: 'A: 53 s pipetree in einer Activity von 304 s — der Rest ist Session-Start und pip auf einer Trial-Kapazität. B: 15 Minuten, weil jede Tabelle ihre eigene Session zahlt. Und die harte Grenze: 120 Activities pro Pipeline. Bei 171 Tabellen muss man den Baum in zwei Pipelines schneiden, und dependsOn geht nicht über den Schnitt.',
+	});
+	d.figureSlide({
+		kicker: '// 04 · two ways on fabric',
+		title: 'B: the pipeline’s view of a failure',
+		image: img('fabric-pipeline-canvas.png'), imageW: 1978, imageH: 568,
+		caption: 'dependents stop — but the activity retry ran a malformed file three times',
+		notes: 'Das kann die Pipeline genauso gut: Abhängige Tabellen laufen nicht, wenn der Parent scheitert. Aber die Retry-Policy der Activity sieht nicht in das Notebook: bronze.customer lief dreimal, je eine frische Session, elf Minuten für einen Fehler, den pipetree nach 3 ms als permanent erkannt hat.',
+	});
+	d.twoColSlide({
+		kicker: '// 04 · two ways on fabric',
+		title: 'Which file do you rewrite when you leave?',
+		leftHead: 'A — the package',
+		left: ['Nothing: pipeline.yaml and the logic files', 'Same bytes on a laptop, Fabric and Databricks', 'The notebook is a few lines of seam', 'Activity retry: set it to zero, the package retries'],
+		rightHead: 'B — a pipeline per table',
+		right: ['pipeline-content.json, every line of it', 'The tree restated in a format only Fabric reads', 'Monitor knows activities, not tables', 'Stops at 120 activities per pipeline'],
+		notes: 'Der eigentliche Lock-in. Beide haben Kanten und Retry-Policies — das ist Standard. Das Paket plant Tabellen, die Pipeline plant Activities.',
+	});
+	d.contentSlide({
+		kicker: '// 04 · two ways on fabric',
+		title: 'Keep your pipelines for what they’re good at',
+		items: [
+			['Connectors', 'a Copy activity reaches a SQL Server behind a firewall through the on-premises data gateway'],
+			['The hybrid', 'Copy into a landing folder, a storage_stream system reads it from there'],
+			['One seam', 'the Copy activity fails in the pipeline, everything after it in the tree'],
+		],
+		notes: 'Wichtig für dieses Publikum: Das ist kein Plädoyer, Data-Factory-Pipelines zu löschen. Für Konnektoren und das On-Premises-Gateway hat das Paket keine Antwort. Die ehrliche Form ist ein Hybrid: Copy in einen Landing-Ordner, ab da übernimmt der Baum.',
+	});
+
+	// ───────────────────────── 05 decisions ─────────────────────────
+	d.section('05 Design decisions');
+	d.sectionSlide({ num: 5, total: TOTAL, title: 'What worked, what didn’t', subtitle: 'And what I’d change today' });
+	d.cardsSlide({
+		kicker: '// 05 · design decisions',
 		title: 'Looking back',
 		cards: [
 			{ head: 'Worked', color: p.green, text: 'depends_on: auto. Tree over layers. failed vs upstream_failed. No locks in the scheduler.' },
 			{ head: 'Hurt', color: p.orange, text: 'The simple parser misses dynamic table names. Engine errors needed translating before retries worked. append is hard to retry.' },
-			{ head: 'Today I’d …', color: p.accent, text: 'TODO David: what you’d change today' },
+			{ head: 'Today I’d …', color: p.accent, text: 'Stop selling bronze · silver · gold as the rule. It is one example — use the layers the data needs.' },
 		],
-		notes: 'TODO David: Spalte 3 mit deinen eigenen Punkten füllen (laut Meetup-Beschreibung: "was ich heute anders machen würde"). Die ersten beiden Spalten stammen aus Teil 1 und 2 der Blog-Serie — bitte gegenlesen.',
+		notes: 'Spalte 3: In Projekten sehe ich oft starres Bronze/Silver/Gold — und dann wird alles in diese drei Töpfe gepresst. Heute würde ich die Medaillon-Namen klarer als Beispiel verkaufen: so viele Layer wie nötig, Namen frei wählbar. Die ersten beiden Spalten stammen aus Teil 1 und 2 der Blog-Serie.',
 	});
 
-	// ───────────────────────── 05 demo ─────────────────────────
-	d.section('05 Live demo');
-	d.sectionSlide({ num: 5, total: TOTAL, title: 'A new source, live', subtitle: 'products.parquet → bronze → gold.fact_sales → Power BI' });
+	// ───────────────────────── 06 demo ─────────────────────────
+	d.section('06 Live demo');
+	d.sectionSlide({ num: 6, total: TOTAL, title: 'A new source, live', subtitle: 'products.parquet → bronze → gold.fact_sales → Power BI' });
 	d.demoSlide({
-		text: 'Fabric · pipetree environment · Direct Lake report',
-		notes: 'Ablauf: (1) Lakehouse + Report zeigen, Ausgangslage. (2) products.parquet liegt in Files/data. (3) YAML: system + bronze.products. (4) fact_sales.py: Join auf products. (5) Run mit LiveGraphView — neuer Knoten, neue Kante. (6) Power BI: Umsatz nach Kategorie. Backup: Video.',
+		text: '%pip install pipetree-meta · Fabric notebook · Direct Lake report',
+		notes: 'Ablauf: (0) Notebook-Session vorher starten, erste Zelle %pip install pipetree-meta schon ausgeführt. (1) Lakehouse + Report zeigen, Ausgangslage. (2) products.parquet liegt in Files/data. (3) YAML: system + bronze.products. (4) fact_sales.py: Join auf products. (5) Run mit LiveGraphView — neuer Knoten, neue Kante. (6) Power BI: Umsatz nach Kategorie. (7) Vergleich: vorher ausgeführte Pipeline B im Monitor zeigen — für products bräuchte B eine neue Activity mit dependsOn auf fact_sales (oder den Generator neu laufen lassen). Backup: Video. Hinweis: %pip nur interaktiv; im Pipeline-Run beendet %pip die Session, dort pip per subprocess (siehe Teil 3).',
 	});
 	d.codeSlide({
-		kicker: '// 05 · recap',
+		kicker: '// 06 · recap',
 		title: 'Everything the new source took',
 		filename: 'pipeline.yaml  (+ one join in fact_sales.py)',
 		lines: [
@@ -273,10 +353,19 @@ const img = (f) => path.join(__dirname, 'img', f);
 		notes: 'Nach der Demo als Zusammenfassung: Das war alles. Kein neues Notebook, keine Kopie.',
 	});
 	d.figureSlide({
-		kicker: '// 05 · recap',
+		kicker: '// 06 · recap',
 		title: 'One new node, one new edge',
 		image: img('graph-after.png'), imageW: 3504, imageH: 1128,
 		notes: 'Die Abhängigkeit products → fact_sales hat niemand deklariert — sie kommt aus dem spark.table-Aufruf.',
+	});
+	d.twoColSlide({
+		kicker: '// 06 · recap',
+		title: 'The same change in variant B',
+		leftHead: 'A — the package',
+		left: ['One system block, one bronze table', 'One join in fact_sales.py', 'The tree picks up the new edge'],
+		rightHead: 'B — a pipeline per table',
+		right: ['The same YAML and the same join', 'Plus a new activity with the right dependsOn', 'Or re-run the generator — the YAML is the source anyway', 'And one step closer to 120'],
+		notes: 'Hier den vorher ausgeführten B-Lauf im Monitor zeigen. Pointe: In B ist die YAML trotzdem die Quelle, die Pipeline ist ein Build-Artefakt — man landet beim Modell des Pakets, mit einem Extraschritt.',
 	});
 	d.statementSlide({
 		kicker: '// takeaway',
@@ -287,8 +376,8 @@ const img = (f) => path.join(__dirname, 'img', f);
 		kicker: '// try it',
 		title: 'Take it home',
 		cards: [
-			{ head: 'Install it', text: 'pip install pipetree-meta — docs and quick start at pipetree.dev. In Fabric: add it to an environment.' },
-			{ head: 'The long version', text: 'The “Pipeline Engineering” series on datadave.dev — schema, executor, Fabric, Databricks.' },
+			{ head: 'Install it', text: 'pip install pipetree-meta — docs and quick start at pipetree.dev. In Fabric: one %pip cell in the notebook, an environment for scheduled runs.' },
+			{ head: 'The long version', text: 'The “Pipeline Engineering” series on datadave.dev. Part 3 is the Fabric comparison, with code in datadave-fabric-examples.' },
 			{ head: 'Slides & demo', text: 'PDF, pipeline.yaml, sample data and the notebook on the talk page.' },
 		],
 		notes: 'QR-Code auf der nächsten Folie führt zur Talk-Seite mit allem Material.',
