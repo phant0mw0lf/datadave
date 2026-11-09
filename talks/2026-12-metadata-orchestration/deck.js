@@ -300,15 +300,23 @@ const img = (f) => path.join(__dirname, 'img', f);
 		right: ['pipeline-content.json, every line of it', 'The tree restated in a format only Fabric reads', 'Monitor knows activities, not tables', 'Stops at 120 activities per pipeline'],
 		notes: 'Der eigentliche Lock-in. Beide haben Kanten und Retry-Policies — das ist Standard. Das Paket plant Tabellen, die Pipeline plant Activities.',
 	});
-	d.contentSlide({
+	d.twoColSlide({
 		kicker: '// 04 · two ways on fabric',
-		title: 'Keep your pipelines for what they’re good at',
-		items: [
-			['Connectors', 'a Copy activity reaches a SQL Server behind a firewall through the on-premises data gateway'],
-			['The hybrid', 'Copy into a landing folder, a storage_stream system reads it from there'],
-			['One seam', 'the Copy activity fails in the pipeline, everything after it in the tree'],
+		title: 'Not reach — what reach costs',
+		leftHead: 'data pipeline · gateways',
+		left: [
+			'On-premises data gateway: a Windows service next to the SQL Server',
+			'VNet data gateway for sources in an Azure VNet',
+			'Neither is available to a notebook',
+			'Hybrid: Copy into a landing folder, storage_stream from there',
 		],
-		notes: 'Wichtig für dieses Publikum: Das ist kein Plädoyer, Data-Factory-Pipelines zu löschen. Für Konnektoren und das On-Premises-Gateway hat das Paket keine Antwort. Die ehrliche Form ist ein Hybrid: Copy in einen Landing-Ordner, ab da übernimmt der Baum.',
+		rightHead: 'notebook · managed VNet',
+		right: [
+			'Managed private endpoints to Azure SQL, storage, Private Link — on-prem SQL Server included',
+			'Then sqlserver is a plain JDBC read, custom covers the rest',
+			'No starter pools: 3–5 min per session start',
+		],
+		notes: 'Korrigiert nach Teil 3: Das Gateway (On-Premises und VNet Data Gateway) gibt es nur für Pipelines/Copy, nicht für Notebooks. Das Notebook hat stattdessen das Managed VNet: Managed Private Endpoints zu Azure SQL, Storage oder allem hinter einem Private-Link-Service, auch On-Prem-SQL-Server. Dann ist sqlserver ein normaler JDBC-Read, für alles ohne Reader gibt es type: custom. Der Preis: mit Managed VNet keine Starter Pools mehr, jede Session 3–5 Minuten — B zahlt das pro Activity. Wo ein Gateway einfacher ist: Hybrid — Copy in einen Landing-Ordner, ab da storage_stream. Die Naht: der erste Hop läuft auf der Retry-Policy der Pipeline und steht im Monitor Hub, nicht im Run-Log.',
 	});
 
 	// ───────────────────────── 05 decisions ─────────────────────────
