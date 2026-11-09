@@ -1,0 +1,16 @@
+graph LR
+  subgraph bronze
+    C[customer]
+    O[orders]
+    E[employee]
+  end
+  subgraph silver
+    CE[customer_enriched]
+    SO[orders ]
+  end
+  subgraph gold
+    DC[dim_customer]
+    F[fact_sales]
+  end
+  C --> CE --> DC --> F
+  O --> SO --> F
