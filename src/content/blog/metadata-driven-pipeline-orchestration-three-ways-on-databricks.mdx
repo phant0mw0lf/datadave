@@ -68,11 +68,11 @@ digest = run_pipeline(config_path, adapter=adapter, select=select,
 
 Writing that entrypoint found a real bug before any workspace was involved: `run_pipeline()` without an adapter — the CLI's path, and the obvious thing to call from a notebook — used to build a fresh `local[*]` session unconditionally — fine on a laptop, wrong on a cluster that already has a distributed one. One line (`SparkSession.getActiveSession() or build_local_session()`), but it only surfaced by asking "which session does this use on Databricks" instead of reasoning about it on paper.
 
-The numbers for the clean run: 412 seconds until the notebook started (a fresh single-node cluster, then `pip install pipetree-meta` on it), then **91 seconds** for all seven tables. B's cluster below has the same spec and the same install and took 111; the difference is how much a cold VM start varies, which is why the pipeline time is the number to compare.
+The numbers for the clean run, as the job reports them: 412 seconds until the notebook started (a fresh single-node cluster, then `pip install pipetree-meta` on it), then **91 seconds** for the notebook run that did all seven tables — the session, the import, the YAML, and pipetree's part of it. B's cluster below has the same spec and the same install and took 111; the difference is how much a cold VM start varies, which is why the pipeline time is the number to compare.
 
 <figure>
   <Image src={aLiveGraph} alt="pipetree's LiveGraphView rendered under the run cell of the notebook task, after the fault run: execution 261105085830492, FAILED, 32.2 seconds, seven tables in four waves. bronze.customer is marked failed, customer_enriched, dim_customer and fact_sales upstream_failed, orders retried and succeeded, employee and silver.orders succeeded. Below it the run digest table with status, attempts, duration and error per table." widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="rounded-md border border-[var(--color-border)]" />
-  <figcaption>The same view as in part 2, rendered by the package inside the notebook task's output. The job sees one task; this is what happened inside it.</figcaption>
+  <figcaption>The same view as in part 2, rendered by the package inside the notebook task's output. This is the fault run, not the clean one: 32 seconds of pipetree, four of the seven tables, inside a notebook run the job clocked at 79. The job sees one task that failed; this is what happened inside it.</figcaption>
 </figure>
 
 ## B: a job with one task per table
