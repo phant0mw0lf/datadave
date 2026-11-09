@@ -1,0 +1,209 @@
+---
+title: "Metadata-driven Pipeline Orchestration: Three Ways on Databricks"
+description: "Part 4 — pipetree in one notebook task next to a job with a task per table and a Lakeflow Declarative Pipeline: who owns the tree, what a failure does, and what you rewrite when you leave."
+pubDate: 2026-11-17
+tags:
+  - data-engineering
+  - pipelines
+  - spark
+  - databricks
+  - pipeline-engineering
+draft: false
+---
+
+import { Image } from 'astro:assets';
+import aLiveGraph from '../../assets/blog/three-ways-on-databricks/a-livegraph.png';
+import bGraphLight from '../../assets/blog/three-ways-on-databricks/b-job-graph-light.png';
+import bGraphDark from '../../assets/blog/three-ways-on-databricks/b-job-graph-dark.png';
+import cGraphLight from '../../assets/blog/three-ways-on-databricks/c-pipeline-graph-light.png';
+import cGraphDark from '../../assets/blog/three-ways-on-databricks/c-pipeline-graph-dark.png';
+
+**Pipeline Engineering · part 4 of 4** — [pipetree](https://pipetree.dev) on Databricks, next to the two things Databricks offers for the same work. The package and its YAML are [part 1](/blog/metadata-driven-pipeline-orchestration-the-package-yaml-schema/), the executor is [part 2](/blog/metadata-driven-pipeline-orchestration-multithreading-and-failure-handling/), and [part 3](/blog/metadata-driven-pipeline-orchestration-two-ways-on-fabric/) did the same exercise on Fabric.
+
+Here is the run from part 2 again, the seven-table example with the same two injected faults, a malformed CRM export and an orders source that answers 429 twice. This time it ran as a Databricks job, and the digest is a query on the run log the package wrote to Unity Catalog:
+
+```text
+SELECT table_fqn, status, attempts, duration_ms, error_message
+FROM ptsbdev2_dev._meta.pipeline_run_log WHERE _execution_id = 261105085830492
+
+bronze.orders             retried→succeeded  3  27828
+bronze.customer           failed             1      5  malformed export file
+bronze.employee           succeeded          1  27826
+silver.orders             succeeded          1   4373
+silver.customer_enriched  upstream_failed    0      0
+gold.dim_customer         upstream_failed    0      0
+gold.fact_sales           upstream_failed    0      0
+```
+
+Same seven rows, same statuses, same exit code 1 — the only thing that changed is where it ran. That was the point of parts 1 and 2: the executor doesn't know what cluster it's on.
+
+The question this post asks is a different one. Databricks has two ways of its own to run a tree of tables: a job with one task per table, and a Lakeflow Declarative Pipeline. I built the same seven tables all three ways, ran them on the same workspace, broke them the same way, and compared. Not "which is better" — which *unit* each one orchestrates, what a failure does, and what you have to rewrite when you leave.
+
+## The three variants
+
+| | A — the package | B — a job with tasks | C — Declarative Pipeline |
+|---|---|---|---|
+| Who owns the dependency tree | pipetree, inside one notebook task | the Databricks job (`depends_on`) | Lakeflow, derived from the SQL |
+| The unit it schedules | a table | a task (a notebook run) | an update (every flow in it) |
+| What runs per table | pipetree's merge | pipetree's merge, `select=<table>` | an AUTO CDC flow or a materialized view |
+| The definition | `pipeline.yaml` + the logic files | `databricks.yml` with 7 tasks, generated from the YAML | `pipeline.sql` + one Python file, written by hand |
+| Compute | any cluster (a single-node job cluster here) | a job cluster shared by the tasks | serverless, which is also what Lakeflow Connect's connectors run on |
+
+A and B run the *same notebook*. It takes a `select` parameter; empty means the whole tree, a table name means that one table. So the merge code is identical in both, and the only thing that moves is the orchestration: in A pipetree schedules, retries and logs, in B the job does. That's the fair version of the comparison. If every task in B were a hand-written notebook, I'd be comparing merge implementations, not orchestrators.
+
+C is the real comparison against Lakeflow. pipetree can translate its `scd1`/`scd2` tables into AUTO CDC flows (part 1 pointed at the mapping; the translator is in 0.1.1), and the three bronze flows in `pipeline.sql` are exactly what it renders. Everything else in the pipeline — landing the files, the `replace` tables, the gold dimension — is what it does *not* translate, and I had to write by hand. That gap is half of what this post is about.
+
+The companion code is [datadave-databricks-examples](https://github.com/phant0mw0lf/datadave-databricks-examples), one bundle per variant; `databricks bundle deploy` and `run` for each. pipetree comes from PyPI.
+
+## A: one task, the package
+
+Nothing new to say about the package itself; part 2 said it. What's new is the seam: the notebook builds a `DatabricksPlatform` and a `SparkAdapter` on the cluster's session and hands both to `run_pipeline`. Relative paths in the YAML resolve to a Unity Catalog Volume, secrets come from Key Vault through a UC service credential, and `USE CATALOG` once at the top makes every plain `schema.table` name in the YAML land in the right catalog.
+
+```python
+platform = DatabricksPlatform(dbutils=dbutils, catalog=catalog)
+adapter = SparkAdapter(spark, systems=config.systems, base_dir=config_path.parent, platform=platform)
+digest = run_pipeline(config_path, adapter=adapter, select=select,
+                      run_log_writer=DeltaRunLogWriter(spark), observer=LiveGraphView())
+```
+
+Writing that entrypoint found a real bug before any workspace was involved: `run_pipeline()` without an adapter — the CLI's path, and the obvious thing to call from a notebook — used to build a fresh `local[*]` session unconditionally — fine on a laptop, wrong on a cluster that already has a distributed one. One line (`SparkSession.getActiveSession() or build_local_session()`), but it only surfaced by asking "which session does this use on Databricks" instead of reasoning about it on paper.
+
+The numbers for the clean run, as the job reports them: 412 seconds until the notebook started (a fresh single-node cluster, then `pip install pipetree-meta` on it), then **91 seconds** for the notebook run that did all seven tables — the session, the import, the YAML, and pipetree's part of it. B's cluster below has the same spec and the same install and took 111; the difference is how much a cold VM start varies, which is why the pipeline time is the number to compare.
+
+<figure>
+  <Image src={aLiveGraph} alt="pipetree's LiveGraphView rendered under the run cell of the notebook task, after the fault run: execution 261105085830492, FAILED, 32.2 seconds, seven tables in four waves. bronze.customer is marked failed, customer_enriched, dim_customer and fact_sales upstream_failed, orders retried and succeeded, employee and silver.orders succeeded. Below it the run digest table with status, attempts, duration and error per table." widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="rounded-md border border-[var(--color-border)]" />
+  <figcaption>The same view as in part 2, rendered by the package inside the notebook task's output. This is the fault run, not the clean one: 32 seconds of pipetree, four of the seven tables, inside a notebook run the job clocked at 79. The job sees one task that failed; this is what happened inside it.</figcaption>
+</figure>
+
+## B: a job with one task per table
+
+This is what most teams actually have: a job, one notebook per table, arrows drawn between them. I didn't draw the arrows — `b-job-tasks/generate.py` walks pipetree's dependency tree and writes `databricks.yml` with one `notebook_task` per table, `depends_on` from the edges, a shared job cluster, and a retry policy on each task:
+
+```yaml
+- task_key: gold__fact_sales
+  job_cluster_key: shared
+  max_retries: 2
+  min_retry_interval_millis: 30000
+  notebook_task:
+    notebook_path: ../shared/run_pipeline.py
+    base_parameters:
+      select: gold.fact_sales
+      ...
+  depends_on:
+    - task_key: gold__dim_customer
+    - task_key: silver__orders
+```
+
+Seven tasks, 145 lines. The clean run took 242 seconds: 111 for the shared cluster, then the critical path — a bronze task (79 s), a silver task (17 s), the dimension (20 s), the fact (12 s). Each bronze task spent **79 seconds** merging three rows of CSV, because each task is a notebook run that starts a Spark session, installs nothing more (the shared cluster already has the package), but still imports pipetree, parses the YAML, builds the graph and resolves a Volume — for one table. The package did all seven in 91 seconds inside a single notebook run of the same kind.
+
+That overhead is the task-as-unit cost, and it doesn't shrink with scale. It's also the honest reason people bundle tables into fewer tasks — and the moment two tables share a task, the job's `depends_on` no longer describes the tables, and a failure inside the task takes down its siblings.
+
+<figure>
+  <Image src={bGraphLight} alt="The Databricks job run graph of variant B after the fault run: seven task boxes. bronze__customer is red, failed after 13 seconds and 3 attempts; silver__customer_enriched, gold__dim_customer and gold__fact_sales are marked upstream failed with 0 seconds; bronze__employee and bronze__orders succeeded after about 3 minutes 13 seconds each, silver__orders after 18 seconds." widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="dark:hidden rounded-md border border-[var(--color-border)]" />
+  <Image src={bGraphDark} alt="" aria-hidden="true" widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="hidden dark:block rounded-md border border-[var(--color-border)]" />
+  <figcaption>The job's own view of the same two faults. Same shape as pipetree's graph, because both come from the same YAML; the job just doesn't know that. The task durations here include the wait for the shared cluster; the 79 s in the text is the notebook run alone.</figcaption>
+</figure>
+
+### The same faults
+
+With the two faults injected, B behaves like A in one respect and differently in two — the same pattern as the data pipeline on Fabric in part 3.
+
+`bronze.orders` succeeded on its third attempt — but that retry was still **pipetree's**, inside the task; the job saw a task that succeeded on its first. A task only fails when the package has given up, so the job's own retry policy only ever meets the errors the package already classified as permanent, and retries them anyway: `bronze.customer` failed after 68 seconds, the job ran the notebook again at once (23 s; the 30-second interval counts from the *start* of the failed attempt), waited out the rest of the next one, ran it again (13 s). Three attempts and close to two minutes for an error that pipetree fails after one look, because `max_retries` can't tell a 429 from a broken file. To make the job the one doing the *useful* retry, I'd have to switch the package's off — and then it would retry the broken file just the same.
+
+The dependents did stop. `silver.customer_enriched`, `gold.dim_customer` and `gold.fact_sales` ended as `UPSTREAM_FAILED` — Databricks uses the same word — because `run_if` defaults to "all parents succeeded". That's the one thing the job does exactly as well as the package, as long as one table stays one task.
+
+And the run log is the wrong shape. The job has a history per task, `system.lakeflow.job_task_run_timeline` has a row per task run, and neither knows what a table is. The seven rows at the top of this post exist in B only because every task writes its own — so one job run produced **six execution ids and 42 rows** (three attempts of `bronze.customer`, one each for the three tasks that ran), 36 of them `skipped`, since each task's pipetree sees a seven-table pipeline and runs one of them. Same table, same package, and the log stopped describing a run.
+
+## C: a Declarative Pipeline
+
+The three bronze `scd1` flows are pipetree's translation, verbatim:
+
+```sql
+CREATE OR REFRESH STREAMING TABLE ${catalog}.ldp_bronze.customer;
+
+CREATE FLOW bronze_customer_flow AS AUTO CDC INTO
+  ${catalog}.ldp_bronze.customer
+FROM STREAM ${catalog}.ldp_bronze.customer_raw
+KEYS (accountid)
+APPLY AS DELETE WHEN isdelete = true
+SEQUENCE BY versionnumber
+STORED AS SCD TYPE 2
+TRACK HISTORY ON * EXCEPT (modifiedon, _loaded_at);
+```
+
+Everything around them I wrote by hand, and each piece is a place where the YAML's model and Lakeflow's don't line up:
+
+- **A flow needs a streaming source.** pipetree reads the CSV inside the merge; AUTO CDC reads `FROM STREAM`, so every source first lands in its own append-only table through Auto Loader. Auto Loader watches a folder, not a file (`Input path is not a directory` was the first update's error), so the Volume now has `landing/customer/`, `landing/orders/`, `landing/employee/` next to the single files the package reads.
+- **`scd1` needs a sequence.** Two of the three bronze tables have no `sequence_by` in the YAML; pipetree's scd1 doesn't need one. AUTO CDC does, so the landing tables carry `_metadata.file_modification_time` as `_loaded_at` for exactly that purpose.
+- **The logic files aren't portable as-is.** `silver/customer_enriched.sql` says `WHERE _is_current = true`; AUTO CDC's scd2 says `WHERE __END_AT IS NULL`. Same idea, different column, and every logic file that touches history has to know which engine wrote the history.
+- **A `replace` table is a materialized view.** That's the easy case, and it's why pipetree doesn't translate them: there's nothing to translate.
+- **scd2 on top of a recomputed view is a snapshot flow.** `gold.dim_customer` is scd2 over `silver.customer_enriched`, which is recomputed every run, not appended to. A materialized view can't feed `FROM STREAM`, so the dimension became `AUTO CDC ... FROM SNAPSHOT (SELECT ... FROM silver.customer_enriched)`: Lakeflow diffs the whole view per update. It works, it's the right tool, and nothing in the YAML says which of the two flow kinds a table needs — that depends on how its parent is written.
+- **`unknown_member: true` has no counterpart.** The `-1` row pipetree seeds into the dimension doesn't exist here; `fact_sales` coalesces to `-1` on its own, which is a weaker promise.
+- **The Python logic file is a decorated function.** `fact_sales.py` assigns `result = ...` for pipetree and becomes `@dp.materialized_view` for Lakeflow — three lines, but it's a second copy.
+
+<figure>
+  <Image src={cGraphLight} alt="The Lakeflow Declarative Pipeline graph after the clean update: three Volume folders on the left feed employee_raw, customer_raw and orders_raw, which feed the streaming tables employee, customer and orders. customer flows into customer_enriched and then dim_customer, orders_raw into bronze orders and then silver orders, and dim_customer and silver orders join into fact_sales. All ten nodes are marked succeeded." widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="dark:hidden rounded-md border border-[var(--color-border)]" />
+  <Image src={cGraphDark} alt="" aria-hidden="true" widths={[700, 1400, 2100]} sizes="(min-width: 768px) 700px, 100vw" class="hidden dark:block rounded-md border border-[var(--color-border)]" />
+  <figcaption>Lakeflow's graph after the clean update. Nobody declared these edges; they fall out of the SQL. The three <code>_raw</code> tables on the left are the landing step that pipetree's bronze layer does implicitly.</figcaption>
+</figure>
+
+What you get for that: the DAG is derived, not declared, and the update ran all seven tables (plus the three landing tables) in **33 seconds** of execution on serverless, about a minute wall-clock from `INITIALIZING` to `COMPLETED` — nothing to start, nothing to install. It also left ten `__materialization_mat_*` tables and an event log table in my schemas, which is Lakeflow's business and not mine to clean up.
+
+### The same faults, where they apply
+
+A throttled source has no counterpart here: there's no source call to throttle. Lakeflow reads a folder. If the *storage* throttles, the platform retries the update — the whole update, with everything in it — and it does so on its own: after my first attempt failed on the directory error, the pipeline retried twice before I'd read the message.
+
+The malformed export I could reproduce for real: a second `customer_2.csv` in the landing folder, one line `;`-delimited, one with an unterminated quote. The update **completed**. The CSV reader loaded the two bad lines as rows of NULLs (`_rescued_data` empty, nothing rescued), AUTO CDC turned them into a row with a NULL key in `bronze.customer`, and the snapshot flow carried that row into `gold.dim_customer` as a current version:
+
+```text
+accountid  name           __START_AT                __END_AT
+           (null)         2026-11-05T08:57:33.217Z  (null)      ← the export
+1          Contoso Ltd    2026-11-05T08:44:43.613Z  (null)
+```
+
+pipetree doesn't let a NULL business key into a merge: a warning, `notes: 1 NULL-key row(s) dropped`, a badge on the table, and the row stays out. Lakeflow has the mechanism — `CONSTRAINT valid_key EXPECT (accountid IS NOT NULL) ON VIOLATION DROP ROW` — but it's one more thing per table that the YAML's `business_key` already implies. The difference isn't capability. It's whether the thing you declared once (this column identifies a row) is allowed to mean everything it should.
+
+## What scales with the number of tables
+
+Seven tables is too few to feel any of this, so I measured instead. The bench pipeline from the scale tests has 171 tables (85 `replace`, 56 `scd1`, 24 `append`, 6 `scd2`), and a script generates the B and C definitions from its YAML the same way `generate.py` does here:
+
+| | 7 tables | 171 tables |
+|---|---|---|
+| `pipeline.yaml` | 74 lines | 1,870 lines |
+| B: `databricks.yml` | 121 lines (`select` only; the committed file with the fault parameters is 145) | 2,423 lines, 171 tasks |
+| C: AUTO CDC flows | 4 flows, 37 lines (three generated; the dimension rewritten by hand as a snapshot flow) | 56 flows, 448 lines |
+| C: not translated | 3 materialized views | 109 materialized views / streaming tables, 6 tables refused (`surrogate_key`) |
+
+Two things to read out of that. B's definition is *in addition* to the YAML, not instead of it: the tasks still call pipetree. The arithmetic from [part 3](/blog/metadata-driven-pipeline-orchestration-two-ways-on-fabric/) applies unchanged — the YAML is the source of truth and the job is a build artifact. A job can hold [1,000 tasks](https://docs.databricks.com/aws/en/jobs/), so the limit isn't the platform; it's that nobody reads a graph with 171 nodes.
+
+C covers a third of the bench tables with the generated flows and leaves two thirds to be written by hand — and the six `surrogate_key` dimensions can't be expressed as flows at all (an identity column on an AUTO CDC target isn't modeled). None of the readers are in there either: the JDBC sources, Kusto, the Graph API all sit outside the pipeline and feed it through landing tables. That's fine when Lakeflow Connect has the connector — and you're on serverless, which its connectors run on. When it doesn't, you have two worlds and a seam, and the seam is where the run log, the retry policy and the failure semantics change.
+
+## Where the lock-in actually is
+
+I promised not to call this "which is better", so here is the question I'd ask instead: **which file do you rewrite when you leave?**
+
+- A: nothing. `pipeline.yaml` and the logic files ran on a laptop in part 2, on Databricks here, and on Fabric in [part 3](/blog/metadata-driven-pipeline-orchestration-two-ways-on-fabric/) — the same bytes.
+- B: `databricks.yml`. Everything in it that isn't the cluster spec is a restatement of the tree, in a format only Databricks reads.
+- C: all of it. The flows are AUTO CDC, the views are Lakeflow materialized views, the Python is `pyspark.pipelines`, and the history columns are `__START_AT`/`__END_AT`. The logic files I copied in had to change to match.
+
+That's not an argument against C. Lakeflow owns more, so it does more: a derived DAG, serverless compute, expectations, an event log that is a Delta table. If every source you have is one Lakeflow Connect ships, and serverless is fine, I'd generate the flows from the YAML and let the platform run them. The YAML stays the source of truth; the pipeline is a build artifact, like B's job should be.
+
+It's an argument for knowing which unit you're orchestrating. The package schedules tables, which is the same unit the data has. The job schedules tasks, which are tables only if you keep them that way. The pipeline schedules updates. When something breaks, the unit is what you get told about.
+
+## Try it
+
+Everything above is in [datadave-databricks-examples](https://github.com/phant0mw0lf/datadave-databricks-examples), folder `pipeline-engineering-part-4`: three bundles, one shared notebook, the faults as a job parameter, and the malformed second delivery as a file. You need a Unity Catalog catalog, a Volume for the CSVs, and the `databricks` CLI; pipetree comes from PyPI (`pipetree-meta`, 0.1.1).
+
+```bash
+export BUNDLE_VAR_catalog=<catalog>
+(cd a-package && databricks bundle deploy -t dev && databricks bundle run pipetree_a_package -t dev)
+```
+
+A and B write to `bronze`/`silver`/`gold`, C to `ldp_bronze`/`ldp_silver`/`ldp_gold`, so all three can live in one catalog and you can diff them.
+
+## The series
+
+- [Part 1](/blog/metadata-driven-pipeline-orchestration-the-package-yaml-schema/) — the package and its YAML: what a table declaration says, and what it doesn't have to.
+- [Part 2](/blog/metadata-driven-pipeline-orchestration-multithreading-and-failure-handling/) — the executor: waves, retries, and what a failure does to the rest of the tree.
+- [Part 3](/blog/metadata-driven-pipeline-orchestration-two-ways-on-fabric/) — Fabric: the same seven tables as one Notebook activity and as a data pipeline with one activity per table.
+- Part 4 — this one.
