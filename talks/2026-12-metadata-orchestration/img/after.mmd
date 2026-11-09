@@ -1,0 +1,21 @@
+graph LR
+  subgraph bronze
+    C[customer]
+    O[orders]
+    E[employee]
+    P[products]
+  end
+  subgraph silver
+    CE[customer_enriched]
+    SO[orders ]
+  end
+  subgraph gold
+    DC[dim_customer]
+    F[fact_sales]
+  end
+  C --> CE --> DC --> F
+  O --> SO --> F
+  P --> F
+  classDef new fill:#0f2a17,stroke:#3FB950,color:#E6EDF3,stroke-width:2px;
+  class P new;
+  linkStyle 5 stroke:#3FB950,stroke-width:2.5px;
