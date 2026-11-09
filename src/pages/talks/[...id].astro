@@ -1,0 +1,183 @@
+---
+import { render } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import FormattedDate from '../../components/FormattedDate.astro';
+import { SITE } from '../../consts';
+import { getPosts } from '../../lib/posts';
+import { formatBytes, getTalkFiles, getTalks, isUpcoming } from '../../lib/talks';
+
+export async function getStaticPaths() {
+	const talks = await getTalks();
+	return talks.map((talk) => ({ params: { id: talk.id }, props: { talk } }));
+}
+
+const { talk } = Astro.props;
+const { title, description, event, eventUrl, date, location, lang, recording, repo, posts } =
+	talk.data;
+const { Content } = await render(talk);
+const { slides, files } = getTalkFiles(talk.id);
+const upcoming = isUpcoming(talk);
+
+// Blog posts the talk builds on, in the order the frontmatter lists them.
+// Unknown ids (typo, or a post that's still a draft) are dropped silently.
+const allPosts = await getPosts();
+const related = posts
+	.map((id) => allPosts.find((post) => post.id === id))
+	.filter((post) => post !== undefined);
+
+// Notebooks render nicely on nbviewer, which fetches them by public URL —
+// so the link points at the deployed file, not the local dev server.
+const nbviewer = (href: string) => `https://nbviewer.org/urls/${new URL(href, SITE.url).host}${href}`;
+
+// YouTube recordings get embedded (privacy-enhanced youtube-nocookie domain,
+// no cookies until the visitor presses play); any other host just gets the
+// "Recording" button.
+const youtubeId = (() => {
+	if (!recording) return undefined;
+	const url = new URL(recording);
+	if (url.hostname === 'youtu.be') return url.pathname.slice(1) || undefined;
+	if (!/(^|\.)youtube\.com$/.test(url.hostname)) return undefined;
+	return url.searchParams.get('v') ?? url.pathname.match(/^\/(?:live|embed|shorts)\/([^/?]+)/)?.[1];
+})();
+
+const buttons = [
+	slides && { href: slides.href, label: `Slides (PDF, ${formatBytes(slides.bytes)})`, primary: true },
+	recording && { href: recording, label: 'Recording', primary: false },
+	repo && { href: repo, label: 'Code', primary: false },
+].filter(Boolean) as { href: string; label: string; primary: boolean }[];
+---
+
+<BaseLayout title={title} description={description}>
+	<article>
+		<a href="/talks" class="font-mono text-xs text-fg-muted transition-colors hover:text-fg">
+			&larr; Talks
+		</a>
+		<header class="mt-3 mb-8">
+			<div class="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-fg-muted">
+				{upcoming && <span class="text-accent">upcoming</span>}
+				{upcoming && <span aria-hidden="true">&middot;</span>}
+				<FormattedDate date={date} />
+				<span aria-hidden="true">&middot;</span>
+				{
+					eventUrl ? (
+						<a href={eventUrl} class="underline-offset-2 hover:text-fg hover:underline">
+							{event}
+						</a>
+					) : (
+						<span>{event}</span>
+					)
+				}
+				{
+					location && (
+						<>
+							<span aria-hidden="true">&middot;</span>
+							<span>{location}</span>
+						</>
+					)
+				}
+				{
+					lang === 'de' && (
+						<>
+							<span aria-hidden="true">&middot;</span>
+							<span>talk in German, slides in English</span>
+						</>
+					)
+				}
+			</div>
+			<h1
+				class="mt-3 text-balance font-display text-3xl leading-tight font-semibold tracking-tight text-fg sm:text-4xl"
+			>
+				{title}
+			</h1>
+			<p class="mt-3 text-fg-muted">{description}</p>
+		</header>
+
+		{
+			buttons.length > 0 && (
+				<div class="mb-8 flex flex-wrap gap-2">
+					{buttons.map((button) => (
+						<a
+							href={button.href}
+							class={
+								button.primary
+									? 'rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90'
+									: 'rounded-md border border-border px-3 py-1.5 text-sm text-fg transition-colors hover:border-fg-muted'
+							}
+						>
+							{button.label}
+						</a>
+					))}
+				</div>
+			)
+		}
+
+		{
+			youtubeId && (
+				<div class="mb-8 aspect-video overflow-hidden rounded-lg border border-border bg-surface">
+					<iframe
+						src={`https://www.youtube-nocookie.com/embed/${youtubeId}`}
+						title={`Recording: ${title}`}
+						loading="lazy"
+						allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+						referrerpolicy="strict-origin-when-cross-origin"
+						allowfullscreen
+						class="h-full w-full"
+					/>
+				</div>
+			)
+		}
+
+		<div class="prose dark:prose-invert max-w-none">
+			<Content />
+		</div>
+
+		{
+			files.length > 0 && (
+				<section class="mt-10" aria-label="Demo material">
+					<div class="font-mono text-2xs tracking-wider text-fg-muted uppercase">Demo material</div>
+					<ul class="mt-3 divide-y divide-border rounded-lg border border-border bg-surface">
+						{files.map((file) => (
+							<li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-4 py-2.5">
+								<a
+									href={file.href}
+									download
+									class="font-mono text-sm text-fg transition-colors hover:text-accent"
+								>
+									{file.name}
+								</a>
+								<span class="flex items-baseline gap-3 font-mono text-xs text-fg-muted">
+									{file.name.endsWith('.ipynb') && (
+										<a href={nbviewer(file.href)} class="hover:text-fg hover:underline">
+											view
+										</a>
+									)}
+									<span>{formatBytes(file.bytes)}</span>
+								</span>
+							</li>
+						))}
+					</ul>
+				</section>
+			)
+		}
+
+		{
+			related.length > 0 && (
+				<aside class="mt-12 border-t border-border pt-6" aria-label="Related posts">
+					<div class="font-mono text-2xs tracking-wider text-fg-muted uppercase">Read more</div>
+					<ul class="mt-3 space-y-2">
+						{related.map((post) => (
+							<li>
+								<a
+									href={`/blog/${post.id}/`}
+									class="text-sm font-medium text-fg transition-colors hover:text-accent"
+								>
+									{post.data.title}
+								</a>
+							</li>
+						))}
+					</ul>
+				</aside>
+			)
+		}
+	</article>
+</BaseLayout>

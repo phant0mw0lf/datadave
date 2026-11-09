@@ -1,0 +1,48 @@
+---
+import FormattedDate from './FormattedDate.astro';
+import { getTalkFiles, type Talk } from '../lib/talks';
+
+interface Props {
+	talk: Talk;
+}
+
+const { talk } = Astro.props;
+const { title, description, event, date, location, recording } = talk.data;
+const { slides, files } = getTalkFiles(talk.id);
+
+// Small "what's there" hints, mono like the date line — only what exists.
+const extras = [slides && 'slides', files.length > 0 && 'demo', recording && 'recording'].filter(
+	Boolean,
+) as string[];
+---
+
+<article class="border-t border-border py-6 first:border-t-0">
+	<div class="flex flex-wrap items-center gap-x-2 font-mono text-xs text-fg-muted">
+		<FormattedDate date={date} />
+		<span aria-hidden="true">&middot;</span>
+		<span>{event}</span>
+		{
+			location && (
+				<>
+					<span aria-hidden="true">&middot;</span>
+					<span>{location}</span>
+				</>
+			)
+		}
+	</div>
+	<h2 class="mt-1 text-base font-medium text-fg">
+		<a href={`/talks/${talk.id}/`} class="transition-colors hover:text-accent">{title}</a>
+	</h2>
+	<p class="mt-1 text-sm text-fg-muted">{description}</p>
+	{
+		extras.length > 0 && (
+			<div class="mt-2 flex flex-wrap gap-1.5">
+				{extras.map((label) => (
+					<span class="rounded-full border border-border px-2 py-0.5 font-mono text-2xs text-fg-muted">
+						{label}
+					</span>
+				))}
+			</div>
+		)
+	}
+</article>
